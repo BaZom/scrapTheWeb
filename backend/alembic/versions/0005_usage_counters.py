@@ -8,6 +8,7 @@ Create Date: 2026-05-12
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0005_usage_counters"
@@ -33,7 +34,11 @@ def upgrade() -> None:
             name="uq_usage_counters_org_metric_period",
         ),
     )
-    op.create_index(op.f("ix_usage_counters_organization_id"), "usage_counters", ["organization_id"])
+    op.create_index(
+        op.f("ix_usage_counters_organization_id"),
+        "usage_counters",
+        ["organization_id"],
+    )
     op.create_index(
         "ix_usage_counters_org_metric_period",
         "usage_counters",

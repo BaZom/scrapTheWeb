@@ -8,8 +8,9 @@ Create Date: 2026-05-12
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0003_recipes_runs"
 down_revision: str | None = "0002_page_sessions"
@@ -110,9 +111,17 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["triggered_by_user_id"], ["users.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_extraction_runs_organization_id"), "extraction_runs", ["organization_id"])
+    op.create_index(
+        op.f("ix_extraction_runs_organization_id"),
+        "extraction_runs",
+        ["organization_id"],
+    )
     op.create_index(op.f("ix_extraction_runs_recipe_id"), "extraction_runs", ["recipe_id"])
-    op.create_index("ix_extraction_runs_recipe_started", "extraction_runs", ["recipe_id", "started_at"])
+    op.create_index(
+        "ix_extraction_runs_recipe_started",
+        "extraction_runs",
+        ["recipe_id", "started_at"],
+    )
     op.create_index(op.f("ix_extraction_runs_status"), "extraction_runs", ["status"])
 
     op.create_table(
@@ -134,7 +143,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["run_id"], ["extraction_runs.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_extracted_records_organization_id"), "extracted_records", ["organization_id"])
+    op.create_index(
+        op.f("ix_extracted_records_organization_id"),
+        "extracted_records",
+        ["organization_id"],
+    )
     op.create_index(op.f("ix_extracted_records_recipe_id"), "extracted_records", ["recipe_id"])
     op.create_index(op.f("ix_extracted_records_run_id"), "extracted_records", ["run_id"])
     op.create_index(

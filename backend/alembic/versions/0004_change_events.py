@@ -8,8 +8,9 @@ Create Date: 2026-05-12
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0004_change_events"
 down_revision: str | None = "0003_recipes_runs"
