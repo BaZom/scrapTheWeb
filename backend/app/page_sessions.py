@@ -1,7 +1,7 @@
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
 import structlog
@@ -206,7 +206,7 @@ async def _load_page_session_html(page_session: PageSession, settings: Settings)
 
     def _get_object() -> str:
         response = s3_client.get_object(Bucket=settings.s3_bucket, Key=page_session.html_key)
-        return response["Body"].read().decode("utf-8", errors="replace")
+        return cast(str, response["Body"].read().decode("utf-8", errors="replace"))
 
     return await asyncio.to_thread(_get_object)
 

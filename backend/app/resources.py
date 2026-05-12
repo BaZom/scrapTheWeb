@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import boto3
 import redis.asyncio as redis
@@ -9,7 +9,12 @@ from arq import create_pool
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.sql import text
 
 from app.arq_utils import redis_settings_from_url
@@ -22,12 +27,19 @@ def make_engine(settings: Settings) -> AsyncEngine:
     return create_async_engine(settings.database_url, pool_pre_ping=True)
 
 
-def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker:
-    return async_sessionmaker(engine, expire_on_commit=False)
+def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker[AsyncSession](engine, expire_on_commit=False)
 
 
 def make_redis(settings: Settings) -> redis.Redis:
-    return redis.from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
+    return cast(
+        redis.Redis,
+        redis.from_url(  # type: ignore[no-untyped-call]
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        ),
+    )
 
 
 def make_s3_client(settings: Settings) -> Any:

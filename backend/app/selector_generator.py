@@ -317,8 +317,10 @@ def _parse_segment(segment: str) -> dict[str, Any]:
 
 
 def _normalize_node(node: dict[str, Any]) -> dict[str, Any]:
-    attrs = node.get("attrs") if isinstance(node.get("attrs"), dict) else {}
-    classes = node.get("classes") if isinstance(node.get("classes"), list) else []
+    raw_attrs = node.get("attrs")
+    attrs: dict[Any, Any] = raw_attrs if isinstance(raw_attrs, dict) else {}
+    raw_classes = node.get("classes")
+    classes: list[Any] = raw_classes if isinstance(raw_classes, list) else []
     return {
         **node,
         "nodeId": str(node.get("nodeId", "")),
