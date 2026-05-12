@@ -79,8 +79,8 @@ grep -q "requestPasswordReset" frontend/lib/api.ts
 grep -q "revokeAllSessions" frontend/lib/api.ts
 test -f README.md
 test -f docs/ARCHITECTURE.md
+test -f docs/OBSERVABILITY.md
 test -f docs/RUNBOOK.md
-test -f SLICE_9.md
 test -f scripts/smoke_auth_completion.py
 test -f scripts/smoke_e2e.py
 test -f backend/tests/test_security.py
@@ -104,4 +104,4 @@ else
   echo "skipped smoke_observability_offline.py (structlog and docker unavailable)"
 fi
 
-echo "slice9 static smoke checks passed"
+echo "static smoke checks passed"
