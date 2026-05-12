@@ -1,0 +1,480 @@
+import asyncio
+import hashlib
+import json
+import time
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+import structlog
+from playwright.async_api import async_playwright
+from sqlalchemy import select
+
+from app.arq_utils import redis_settings_from_url
+from app.change_detector import persist_change_events_for_run
+from app.config import get_settings
+from app.models import ExtractedRecord, ExtractionRun, PageSession, Recipe, RecipeVersion
+from app.observability import (
+    WORKER_JOB_DURATION_SECONDS,
+    WORKER_JOB_TOTAL,
+    configure_logging,
+    configure_sentry,
+    configure_worker_tracing,
+    flush_sentry,
+    get_tracer,
+    start_worker_metrics_server,
+)
+from app.recipe_runner import extract_preview_rows
+from app.resources import ensure_bucket, make_engine, make_redis, make_s3_client, make_sessionmaker
+
+HEARTBEAT_PATH = Path("/tmp/scraptheweb-worker-alive")
+MAX_DOM_NODES = 500
+
+
+async def startup(ctx: dict[str, Any]) -> None:
+    settings = get_settings()
+    configure_logging(settings.log_level, service=settings.otel_service_name_worker)
+    configure_sentry(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        service=settings.otel_service_name_worker,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+    )
+    configure_worker_tracing(
+        service=settings.otel_service_name_worker,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        console=settings.otel_console_exporter,
+    )
+    start_worker_metrics_server(settings.worker_metrics_port)
+    ctx["settings"] = settings
+    ctx["logger"] = structlog.get_logger(__name__)
+    ctx["tracer"] = get_tracer("app.worker")
+    ctx["engine"] = make_engine(settings)
+    ctx["sessionmaker"] = make_sessionmaker(ctx["engine"])
+    ctx["redis"] = make_redis(settings)
+    ctx["s3"] = make_s3_client(settings)
+    await ensure_bucket(settings)
+    _write_heartbeat()
+    ctx["logger"].info("worker_started")
+
+
+async def shutdown(ctx: dict[str, Any]) -> None:
+    logger = ctx.get("logger") or structlog.get_logger(__name__)
+    redis_client = ctx.get("redis")
+    if redis_client is not None:
+        try:
+            await redis_client.aclose()
+        except Exception:
+            logger.exception("worker_redis_close_failed")
+    engine = ctx.get("engine")
+    if engine is not None:
+        try:
+            await engine.dispose()
+        except Exception:
+            logger.exception("worker_engine_dispose_failed")
+    flush_sentry()
+    logger.info("worker_stopped")
+
+
+async def render_page(
+    ctx: dict[str, Any],
+    session_id: str,
+    url: str,
+    organization_id: str,
+    user_id: str,
+) -> dict[str, Any]:
+    arq_job_id = ctx.get("job_id", session_id)
+    logger = ctx["logger"].bind(
+        job_id=arq_job_id,
+        page_session_id=session_id,
+        kind="render_page",
+        org_id=organization_id,
+        user_id=user_id,
+    )
+    started_at = time.monotonic()
+    _write_heartbeat()
+    await _update_page_session(ctx, session_id, status="running")
+    logger.info("worker_job_started")
+    try:
+        rendered = await _render_with_playwright(url, ctx["settings"].render_navigation_timeout_ms)
+        screenshot_key = f"page-sessions/{organization_id}/{session_id}/screenshot.png"
+        html_key = f"page-sessions/{organization_id}/{session_id}/page.html"
+
+        await asyncio.gather(
+            _to_thread(
+                ctx["s3"].put_object,
+                Bucket=ctx["settings"].s3_bucket,
+                Key=screenshot_key,
+                Body=rendered["screenshot"],
+                ContentType="image/png",
+            ),
+            _to_thread(
+                ctx["s3"].put_object,
+                Bucket=ctx["settings"].s3_bucket,
+                Key=html_key,
+                Body=rendered["html"].encode("utf-8"),
+                ContentType="text/html; charset=utf-8",
+            ),
+        )
+
+        payload = {
+            "sessionId": session_id,
+            "status": "completed",
+            "metadata": {
+                "title": rendered["title"],
+                "url": url,
+                "screenshotKey": screenshot_key,
+                "htmlKey": html_key,
+            },
+            "domNodes": rendered["dom_nodes"],
+        }
+        await ctx["redis"].set(
+            f"page_session:{session_id}",
+            json.dumps(payload),
+            ex=ctx["settings"].page_session_ttl_seconds,
+        )
+        await _update_page_session(
+            ctx,
+            session_id,
+            status="completed",
+            screenshot_key=screenshot_key,
+            html_key=html_key,
+        )
+        duration_seconds = (time.monotonic() - started_at)
+        WORKER_JOB_TOTAL.labels(kind="render_page", outcome="completed").inc()
+        WORKER_JOB_DURATION_SECONDS.labels(
+            kind="render_page", outcome="completed"
+        ).observe(duration_seconds)
+        logger.info(
+            "worker_job_completed",
+            status="completed",
+            duration_ms=int(duration_seconds * 1000),
+        )
+        return payload
+    except Exception as exc:
+        duration_seconds = (time.monotonic() - started_at)
+        await _update_page_session(ctx, session_id, status="failed", error_message=str(exc)[:1024])
+        WORKER_JOB_TOTAL.labels(kind="render_page", outcome="failed").inc()
+        WORKER_JOB_DURATION_SECONDS.labels(
+            kind="render_page", outcome="failed"
+        ).observe(duration_seconds)
+        logger.exception(
+            "worker_job_failed",
+            status="failed",
+            duration_ms=int(duration_seconds * 1000),
+        )
+        raise
+    finally:
+        _write_heartbeat()
+
+
+async def run_recipe(
+    ctx: dict[str, Any],
+    run_id: str,
+    recipe_id: str,
+    organization_id: str,
+) -> dict[str, Any]:
+    arq_job_id = ctx.get("job_id", run_id)
+    logger = ctx["logger"].bind(
+        job_id=arq_job_id,
+        run_id=run_id,
+        recipe_id=recipe_id,
+        kind="run_recipe",
+        org_id=organization_id,
+    )
+    started_at = time.monotonic()
+    _write_heartbeat()
+    await _update_extraction_run(ctx, run_id, status="running", started_at=datetime.now(UTC))
+    logger.info("worker_job_started")
+    try:
+        recipe, version = await _load_recipe_version(ctx, recipe_id, organization_id)
+        config = version.config
+        url = str(config.get("urlPattern") or recipe.url_pattern)
+        rendered = await _render_with_playwright(url, ctx["settings"].render_navigation_timeout_ms)
+        rows = extract_preview_rows(
+            rendered["html"],
+            str(config["containerSelector"]),
+            list(config["fields"]),
+        )
+        await _persist_extracted_records(ctx, run_id, recipe_id, organization_id, rows, config)
+        change_count = await _persist_change_events(ctx, run_id)
+        await _update_extraction_run(
+            ctx,
+            run_id,
+            status="completed",
+            total_records=len(rows),
+            finished_at=datetime.now(UTC),
+        )
+        duration_seconds = (time.monotonic() - started_at)
+        WORKER_JOB_TOTAL.labels(kind="run_recipe", outcome="completed").inc()
+        WORKER_JOB_DURATION_SECONDS.labels(
+            kind="run_recipe", outcome="completed"
+        ).observe(duration_seconds)
+        logger.info(
+            "worker_job_completed",
+            status="completed",
+            total_records=len(rows),
+            change_events=change_count,
+            duration_ms=int(duration_seconds * 1000),
+        )
+        return {
+            "runId": run_id,
+            "status": "completed",
+            "totalRecords": len(rows),
+            "changeEvents": change_count,
+        }
+    except Exception as exc:
+        duration_seconds = (time.monotonic() - started_at)
+        await _update_extraction_run(
+            ctx,
+            run_id,
+            status="failed",
+            error_message=str(exc)[:1024],
+            finished_at=datetime.now(UTC),
+        )
+        WORKER_JOB_TOTAL.labels(kind="run_recipe", outcome="failed").inc()
+        WORKER_JOB_DURATION_SECONDS.labels(
+            kind="run_recipe", outcome="failed"
+        ).observe(duration_seconds)
+        logger.exception(
+            "worker_job_failed",
+            status="failed",
+            duration_ms=int(duration_seconds * 1000),
+        )
+        raise
+    finally:
+        _write_heartbeat()
+
+
+async def _render_with_playwright(url: str, navigation_timeout_ms: int) -> dict[str, Any]:
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(headless=True)
+        try:
+            page = await browser.new_page(viewport={"width": 1440, "height": 1200})
+            page.set_default_navigation_timeout(navigation_timeout_ms)
+            await page.goto(url, wait_until="networkidle", timeout=navigation_timeout_ms)
+            title = await page.title()
+            html = await page.content()
+            screenshot = await page.screenshot(full_page=True, type="png")
+            dom_nodes = await page.evaluate(
+                """
+                (maxNodes) => {
+                  const elements = Array.from(document.querySelectorAll("body *"));
+                  const visible = [];
+                  const visibleByElement = new Map();
+
+                  elements.forEach((element, index) => {
+                    const rect = element.getBoundingClientRect();
+                    const style = window.getComputedStyle(element);
+                    if (
+                      rect.width < 1 ||
+                      rect.height < 1 ||
+                      style.visibility === "hidden" ||
+                      style.display === "none"
+                    ) {
+                      return;
+                    }
+                    const text = (element.innerText || element.textContent || "")
+                      .replace(/\\s+/g, " ")
+                      .trim()
+                      .slice(0, 160);
+                    const attrs = {};
+                    for (const attr of element.attributes) {
+                      if (
+                        attr.name === "id" ||
+                        attr.name === "class" ||
+                        attr.name === "role" ||
+                        attr.name === "itemprop" ||
+                        attr.name.startsWith("data-")
+                      ) {
+                        attrs[attr.name] = attr.value.slice(0, 160);
+                      }
+                    }
+                    const sameTypeBefore = Array.from(element.parentElement?.children || [])
+                      .filter((sibling) => sibling.tagName === element.tagName)
+                      .indexOf(element) + 1;
+                    const node = {
+                      nodeId: `node-${index}`,
+                      tag: element.tagName.toLowerCase(),
+                      text,
+                      attrs,
+                      classes: Array.from(element.classList).slice(0, 12),
+                      parentNodeId: null,
+                      nthOfType: sameTypeBefore || 1,
+                      x: Math.round(rect.x * 100) / 100,
+                      y: Math.round(rect.y * 100) / 100,
+                      width: Math.round(rect.width * 100) / 100,
+                      height: Math.round(rect.height * 100) / 100
+                    };
+                    visibleByElement.set(element, node);
+                    visible.push({ element, node });
+                  });
+
+                  for (const entry of visible) {
+                    let parent = entry.element.parentElement;
+                    while (parent) {
+                      const visibleParent = visibleByElement.get(parent);
+                      if (visibleParent) {
+                        entry.node.parentNodeId = visibleParent.nodeId;
+                        break;
+                      }
+                      parent = parent.parentElement;
+                    }
+                  }
+
+                  return visible.map((entry) => entry.node).slice(0, maxNodes);
+                }
+                """,
+                MAX_DOM_NODES,
+            )
+            return {
+                "title": title,
+                "html": html,
+                "screenshot": screenshot,
+                "dom_nodes": dom_nodes,
+            }
+        finally:
+            await browser.close()
+
+
+async def _update_page_session(
+    ctx: dict[str, Any],
+    session_id: str,
+    *,
+    status: str,
+    screenshot_key: str | None = None,
+    html_key: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    async with ctx["sessionmaker"]() as session:
+        page_session = await session.get(PageSession, UUID(session_id))
+        if page_session is None:
+            return
+        page_session.status = status
+        if screenshot_key is not None:
+            page_session.screenshot_key = screenshot_key
+        if html_key is not None:
+            page_session.html_key = html_key
+        if error_message is not None:
+            page_session.error_message = error_message
+        await session.commit()
+
+
+async def _load_recipe_version(
+    ctx: dict[str, Any], recipe_id: str, organization_id: str
+) -> tuple[Recipe, RecipeVersion]:
+    async with ctx["sessionmaker"]() as session:
+        recipe = await session.get(Recipe, UUID(recipe_id))
+        if recipe is None or str(recipe.organization_id) != organization_id:
+            raise ValueError("Recipe not found")
+        result = await session.execute(
+            select(RecipeVersion)
+            .where(
+                RecipeVersion.recipe_id == recipe.id,
+                RecipeVersion.organization_id == recipe.organization_id,
+            )
+            .order_by(RecipeVersion.version.desc())
+        )
+        version = result.scalar_one_or_none()
+        if version is None:
+            raise ValueError("Recipe has no saved version")
+        return recipe, version
+
+
+async def _persist_extracted_records(
+    ctx: dict[str, Any],
+    run_id: str,
+    recipe_id: str,
+    organization_id: str,
+    rows: list[dict[str, str]],
+    config: dict[str, Any],
+) -> None:
+    primary_key = None
+    deduplication = config.get("deduplication")
+    if isinstance(deduplication, dict):
+        primary_key = deduplication.get("primaryKey")
+
+    async with ctx["sessionmaker"]() as session:
+        for index, row in enumerate(rows):
+            key_field = primary_key if isinstance(primary_key, str) else None
+            record_key = _record_key(row, key_field, index)
+            session.add(
+                ExtractedRecord(
+                    organization_id=UUID(organization_id),
+                    run_id=UUID(run_id),
+                    recipe_id=UUID(recipe_id),
+                    record_key=record_key,
+                    data=row,
+                )
+            )
+        await session.commit()
+
+
+async def _persist_change_events(ctx: dict[str, Any], run_id: str) -> int:
+    async with ctx["sessionmaker"]() as session:
+        count = await persist_change_events_for_run(session, UUID(run_id))
+        await session.commit()
+        return count
+
+
+def _record_key(row: dict[str, str], primary_key: str | None, index: int) -> str:
+    if primary_key:
+        value = row.get(primary_key)
+        if value:
+            return value[:255]
+    payload = json.dumps(row, sort_keys=True, ensure_ascii=False)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"{index}-{digest}"[:255]
+
+
+async def _update_extraction_run(
+    ctx: dict[str, Any],
+    run_id: str,
+    *,
+    status: str,
+    total_records: int | None = None,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
+    error_message: str | None = None,
+) -> None:
+    async with ctx["sessionmaker"]() as session:
+        run = await session.get(ExtractionRun, UUID(run_id))
+        if run is None:
+            return
+        run.status = status
+        if total_records is not None:
+            run.total_records = total_records
+        if started_at is not None:
+            run.started_at = started_at
+        if finished_at is not None:
+            run.finished_at = finished_at
+        if error_message is not None:
+            run.error_message = error_message
+        await session.commit()
+
+
+async def _to_thread(function: Callable[..., Any], **kwargs: Any) -> Any:
+    return await asyncio.to_thread(function, **kwargs)
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return round((time.monotonic() - started_at) * 1000)
+
+
+def _write_heartbeat() -> None:
+    HEARTBEAT_PATH.write_text(str(time.time()), encoding="utf-8")
+
+
+class WorkerSettings:
+    functions = [render_page, run_recipe]
+    on_startup = startup
+    on_shutdown = shutdown
+    redis_settings = redis_settings_from_url(get_settings().redis_url)
+    max_jobs = 2
+    job_timeout = 60
+    keep_result = 3600
+
+
+__all__ = ["WorkerSettings", "render_page", "run_recipe"]
