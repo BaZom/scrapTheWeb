@@ -6,13 +6,21 @@ import { SentryInit } from "./sentry-init";
 
 export const metadata: Metadata = {
   title: "ScrapTheWeb",
-  description: "Visual recipe builder for public listing pages"
+  description: "Turn public listing pages into structured records, alerts, and exports."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
-      <body>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap"
+        />
+      </head>
+      <body className="font-sans">
         <SentryInit />
         {children}
       </body>

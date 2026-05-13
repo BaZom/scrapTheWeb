@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -367,6 +367,27 @@ async def create_recipe(
     return _recipe_response(recipe, version)
 
 
+@router.get("/api/recipes", response_model=list[RecipeResponse])
+async def list_recipes(
+    user: Annotated[User, Depends(current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[RecipeResponse]:
+    result = await session.execute(
+        select(Recipe)
+        .options(selectinload(Recipe.versions))
+        .join(
+            Membership,
+            (Membership.organization_id == Recipe.organization_id)
+            & (Membership.user_id == user.id),
+        )
+        .order_by(Recipe.updated_at.desc(), Recipe.created_at.desc())
+        .limit(limit)
+    )
+    recipes = result.scalars().unique().all()
+    return [_recipe_response(recipe) for recipe in recipes]
+
+
 @router.get("/api/recipes/{recipe_id}", response_model=RecipeResponse)
 async def get_recipe(
     recipe_id: UUID,
@@ -449,6 +470,33 @@ async def create_recipe_run(
     structlog.contextvars.bind_contextvars(job_id=job.job_id)
     RECIPE_RUN_REQUEST_COUNTER.labels(outcome="accepted").inc()
     return RecipeRunCreateResponse(runId=run.id, jobId=job.job_id, status=run.status)
+
+
+@router.get("/api/runs", response_model=list[RunResponse])
+async def list_runs(
+    user: Annotated[User, Depends(current_user_or_api_key)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[RunResponse]:
+    result = await session.execute(
+        select(ExtractionRun)
+        .options(
+            selectinload(ExtractionRun.records),
+            selectinload(ExtractionRun.change_events),
+        )
+        .join(
+            Membership,
+            (Membership.organization_id == ExtractionRun.organization_id)
+            & (Membership.user_id == user.id),
+        )
+        .order_by(
+            ExtractionRun.started_at.desc().nullslast(),
+            ExtractionRun.finished_at.desc().nullslast(),
+        )
+        .limit(limit)
+    )
+    runs = result.scalars().unique().all()
+    return [_run_response(run) for run in runs]
 
 
 @router.get("/api/runs/{run_id}", response_model=RunResponse)
