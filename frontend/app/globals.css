@@ -4,12 +4,28 @@
 
 :root {
   color-scheme: light;
+  --canvas: #f7f6f3;
+  --surface: #ffffff;
+  --ink: #0d0e0c;
+  --ink-soft: #535350;
+  --ink-muted: #8e8d88;
+  --rule: #e7e5df;
+  --rule-strong: #cdc9bf;
+  --accent: #0d3a2a;
+  --accent-soft: #1a5b41;
+  --success: #16624a;
+  --warning: #b07d1c;
+  --danger: #9c2a1a;
 }
 
+html,
 body {
   margin: 0;
-  background: #f7f7f4;
-  color: #20231f;
+  padding: 0;
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -17,3 +33,43 @@ body {
 * {
   box-sizing: border-box;
 }
+
+::selection {
+  background: var(--ink);
+  color: var(--canvas);
+}
+
+/* Smallcaps eyebrow used for section labels above headlines. */
+.eyebrow {
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* Numeric data: monospace + tabular */
+.numeric {
+  font-feature-settings: "tnum", "lnum";
+}
+
+/* Subtle one-shot reveal — used sparingly for headline + KPIs only */
+.rise-1 { animation: rise 420ms 0ms cubic-bezier(0.2,0.7,0.2,1) both; }
+.rise-2 { animation: rise 420ms 80ms cubic-bezier(0.2,0.7,0.2,1) both; }
+.rise-3 { animation: rise 420ms 160ms cubic-bezier(0.2,0.7,0.2,1) both; }
+.rise-4 { animation: rise 420ms 240ms cubic-bezier(0.2,0.7,0.2,1) both; }
+
+@keyframes rise {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Tasteful scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--rule-strong);
+  border: 2px solid var(--canvas);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track { background: transparent; }

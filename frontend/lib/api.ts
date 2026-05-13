@@ -144,6 +144,9 @@ const runSchema = z.object({
   })
 });
 
+const recipesSchema = z.array(recipeSchema);
+const runsSchema = z.array(runSchema);
+
 export type AuthSession = z.infer<typeof authSchema>;
 export type Dashboard = z.infer<typeof dashboardSchema>;
 export type PageSession = z.infer<typeof pageSessionSchema>;
@@ -300,12 +303,28 @@ export async function createRecipe(
   return parseApiResponse(response, recipeSchema);
 }
 
+export async function listRecipes(accessToken: string): Promise<Recipe[]> {
+  const response = await fetch(`${baseUrl}/api/recipes`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store"
+  });
+  return parseApiResponse(response, recipesSchema);
+}
+
 export async function runRecipe(recipeId: string, accessToken: string): Promise<RunCreate> {
   const response = await fetch(`${baseUrl}/api/recipes/${recipeId}/runs`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   return parseApiResponse(response, runCreateSchema);
+}
+
+export async function listRuns(accessToken: string): Promise<ExtractionRun[]> {
+  const response = await fetch(`${baseUrl}/api/runs`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store"
+  });
+  return parseApiResponse(response, runsSchema);
 }
 
 export async function getRun(runId: string, accessToken: string): Promise<ExtractionRun> {
