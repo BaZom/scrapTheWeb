@@ -1,65 +1,216 @@
-import { ReactNode } from "react";
+import {
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type InputHTMLAttributes,
+  type ReactNode,
+  forwardRef,
+  useId,
+  useMemo
+} from "react";
+
+import { Icon, type IconName } from "./icons";
 
 export function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
 export const focusRing =
-  "outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50";
+  "outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)]";
 
-export const inputClass =
-  "h-11 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-950 shadow-[0_1px_0_rgba(15,23,42,0.03)] transition placeholder:text-slate-400 focus:border-blue-400";
+export const inputClass = "input";
 
-const buttonBase =
-  "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50";
+// ---------------- Button ----------------
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonSize = "sm" | "lg";
 
-export function Button({
-  children,
-  className,
-  variant = "primary",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
-}) {
+export const Button = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: ButtonVariant;
+    size?: ButtonSize;
+    icon?: IconName;
+    trailingIcon?: IconName;
+  }
+>(function Button(
+  { variant = "secondary", size, icon, trailingIcon, children, className, type = "button", ...rest },
+  ref
+) {
   return (
     <button
-      className={cx(
-        buttonBase,
-        focusRing,
-        variant === "primary" &&
-          "bg-slate-950 text-white shadow-sm shadow-slate-950/10 hover:bg-slate-800",
-        variant === "secondary" &&
-          "border border-slate-200 bg-white text-slate-800 shadow-sm shadow-slate-950/[0.03] hover:border-slate-300 hover:bg-slate-50",
-        variant === "ghost" && "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
-        variant === "danger" && "bg-red-600 text-white shadow-sm hover:bg-red-700",
-        className
-      )}
-      {...props}
+      ref={ref}
+      type={type}
+      className={cx("btn", `btn-${variant}`, size && `btn-${size}`, focusRing, className)}
+      {...rest}
     >
+      {icon ? <Icon name={icon} size={size === "lg" ? 16 : 14} className="btn-icon" /> : null}
       {children}
+      {trailingIcon ? <Icon name={trailingIcon} size={14} className="btn-icon" /> : null}
     </button>
   );
-}
+});
 
-export function Panel({
+// ---------------- Badge ----------------
+type BadgeTone =
+  | "neutral"
+  | "success"
+  | "warning"
+  | "danger"
+  | "info"
+  | "accent"
+  | "outline"
+  // legacy aliases
+  | "green"
+  | "amber"
+  | "red"
+  | "blue"
+  | "violet";
+
+export function Badge({
+  tone = "neutral",
+  dot,
+  pulse,
   children,
   className
 }: {
+  tone?: BadgeTone;
+  dot?: boolean;
+  pulse?: boolean;
   children: ReactNode;
   className?: string;
 }) {
+  const tones: Record<BadgeTone, string> = {
+    neutral: "",
+    success: "badge-success",
+    warning: "badge-warning",
+    danger: "badge-danger",
+    info: "badge-info",
+    accent: "badge-accent",
+    outline: "badge-outline",
+    green: "badge-success",
+    amber: "badge-warning",
+    red: "badge-danger",
+    blue: "badge-info",
+    violet: "badge-accent"
+  };
   return (
-    <section
-      className={cx(
-        "rounded-[18px] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]",
-        className
-      )}
-    >
+    <span className={cx("badge", tones[tone], pulse && "badge-running", className)}>
+      {dot ? <span className="dot" /> : null}
+      {children}
+    </span>
+  );
+}
+
+// ---------------- Status helpers ----------------
+type StatusKey =
+  | "completed"
+  | "healthy"
+  | "succeeded"
+  | "ok"
+  | "running"
+  | "queued"
+  | "pending"
+  | "failed"
+  | "error"
+  | "needs"
+  | "draft"
+  | "paused"
+  | "active"
+  | "verified"
+  | string;
+
+const STATUS_MAP: Record<string, { tone: BadgeTone; dot?: boolean; label: string; pulse?: boolean }> = {
+  completed: { tone: "success", dot: true, label: "Completed" },
+  healthy: { tone: "success", dot: true, label: "Healthy" },
+  succeeded: { tone: "success", dot: true, label: "Succeeded" },
+  ok: { tone: "success", dot: true, label: "OK" },
+  active: { tone: "success", dot: true, label: "Active" },
+  verified: { tone: "success", dot: true, label: "Verified" },
+  running: { tone: "warning", dot: true, label: "Running", pulse: true },
+  queued: { tone: "info", dot: true, label: "Queued" },
+  pending: { tone: "info", dot: true, label: "Pending" },
+  failed: { tone: "danger", dot: true, label: "Failed" },
+  error: { tone: "danger", dot: true, label: "Error" },
+  needs: { tone: "warning", dot: true, label: "Needs review" },
+  "needs review": { tone: "warning", dot: true, label: "Needs review" },
+  draft: { tone: "outline", dot: true, label: "Draft" },
+  paused: { tone: "outline", dot: true, label: "Paused" },
+  new: { tone: "success", dot: true, label: "new" },
+  changed: { tone: "warning", dot: true, label: "changed" },
+  removed: { tone: "danger", dot: true, label: "removed" }
+};
+
+export function StatusBadge({ status }: { status: StatusKey }) {
+  const key = (status ?? "").toString().toLowerCase().trim();
+  const s = STATUS_MAP[key] || { tone: "outline" as BadgeTone, dot: true, label: status };
+  return (
+    <Badge tone={s.tone} dot={s.dot} pulse={s.pulse}>
+      {s.label}
+    </Badge>
+  );
+}
+
+// Legacy alias used by some callers
+export function StatusPill({ status }: { status: string }) {
+  return <StatusBadge status={status} />;
+}
+
+// ---------------- Card ----------------
+export function Card({
+  children,
+  className,
+  padded,
+  style
+}: {
+  children: ReactNode;
+  className?: string;
+  padded?: boolean;
+  style?: CSSProperties;
+}) {
+  return (
+    <div className={cx("card", padded && "card-pad", className)} style={style}>
+      {children}
+    </div>
+  );
+}
+
+export function CardHeader({
+  title,
+  sub,
+  action
+}: {
+  title: ReactNode;
+  sub?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="card-header">
+      <div>
+        <div className="card-title">{title}</div>
+        {sub ? <div className="card-sub">{sub}</div> : null}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+// Legacy Panel alias used by other parts of the codebase
+export function Panel({
+  children,
+  className,
+  style
+}: {
+  children: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <section className={cx("card", className)} style={style}>
       {children}
     </section>
   );
 }
 
+// ---------------- SectionTitle (legacy) ----------------
 export function SectionTitle({
   eyebrow,
   title,
@@ -67,185 +218,399 @@ export function SectionTitle({
   action
 }: {
   eyebrow?: string;
-  title: string;
-  description?: string;
+  title: ReactNode;
+  description?: ReactNode;
   action?: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         {eyebrow ? (
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-600">{eyebrow}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">{eyebrow}</p>
         ) : null}
-        <h2 className="mt-1 text-lg font-semibold tracking-normal text-slate-950">{title}</h2>
-        {description ? <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">{description}</p> : null}
+        <h2 className="mt-1 text-[15px] font-semibold tracking-normal text-[var(--text-primary)]">{title}</h2>
+        {description ? (
+          <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--text-secondary)]">{description}</p>
+        ) : null}
       </div>
       {action ? <div className="flex shrink-0 flex-wrap gap-2">{action}</div> : null}
     </div>
   );
 }
 
-export function FieldLabel({
-  children,
-  label
-}: {
-  children: ReactNode;
-  label: string;
-}) {
+// ---------------- Form helpers ----------------
+export function FieldLabel({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <label className="flex min-w-0 flex-col gap-2 text-sm font-medium text-slate-700">
-      {label}
-      {children}
-    </label>
-  );
-}
-
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cx(inputClass, focusRing, props.className)} {...props} />;
-}
-
-export function Badge({
-  children,
-  tone = "neutral"
-}: {
-  children: ReactNode;
-  tone?: "green" | "amber" | "red" | "blue" | "violet" | "neutral";
-}) {
-  const tones = {
-    green: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    red: "border-red-200 bg-red-50 text-red-700",
-    blue: "border-blue-200 bg-blue-50 text-blue-700",
-    violet: "border-violet-200 bg-violet-50 text-violet-700",
-    neutral: "border-slate-200 bg-slate-50 text-slate-600"
-  };
-  return (
-    <span className={cx("inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold", tones[tone])}>
-      {children}
-    </span>
-  );
-}
-
-export function StatusPill({ status }: { status: string }) {
-  const normalized = status.toLowerCase();
-  const tone =
-    normalized.includes("healthy") ||
-    normalized.includes("active") ||
-    normalized.includes("success") ||
-    normalized.includes("validated") ||
-    normalized.includes("completed")
-      ? "green"
-      : normalized.includes("review") ||
-          normalized.includes("paused") ||
-          normalized.includes("running") ||
-          normalized.includes("pending")
-        ? "amber"
-        : normalized.includes("failed") || normalized.includes("broken")
-          ? "red"
-          : "neutral";
-  return <Badge tone={tone}>{status}</Badge>;
-}
-
-export function EmptyState({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-5 text-sm text-slate-500">
+    <div className="field">
+      <label>{label}</label>
       {children}
     </div>
   );
 }
 
+export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function TextInput(
+  { className, ...rest },
+  ref
+) {
+  return <input ref={ref} className={cx("input", focusRing, className)} {...rest} />;
+});
+
+// ---------------- KPI ----------------
+export function KPI({
+  icon,
+  label,
+  value,
+  delta,
+  deltaDir = "up",
+  spark
+}: {
+  icon?: IconName;
+  label: string;
+  value: ReactNode;
+  delta?: ReactNode;
+  deltaDir?: "up" | "down" | "flat";
+  spark?: number[];
+}) {
+  return (
+    <Card className="kpi">
+      <div className="kpi-label">
+        {icon ? (
+          <span className="ki">
+            <Icon name={icon} size={13} />
+          </span>
+        ) : null}
+        {label}
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <div className="kpi-value">{value}</div>
+        {delta ? (
+          <span className={cx("kpi-delta", deltaDir)}>
+            <Icon
+              name={deltaDir === "up" ? "arrowUp" : deltaDir === "down" ? "arrowDown" : "arrowRight"}
+              size={12}
+            />
+            {delta}
+          </span>
+        ) : null}
+      </div>
+      {spark ? <Sparkline className="kpi-spark" data={spark} dir={deltaDir} /> : null}
+    </Card>
+  );
+}
+
+// ---------------- Sparkline ----------------
+export function Sparkline({
+  data,
+  dir = "up",
+  className,
+  width = 88,
+  height = 32,
+  stroke
+}: {
+  data: number[];
+  dir?: "up" | "down" | "flat";
+  className?: string;
+  width?: number;
+  height?: number;
+  stroke?: string;
+}) {
+  const reactId = useId();
+  const gid = useMemo(() => `g${reactId.replace(/[^a-z0-9]/gi, "")}`, [reactId]);
+  const { d, dArea } = useMemo(() => {
+    if (data.length === 0) return { d: "", dArea: "" };
+    const max = Math.max(...data);
+    const min = Math.min(...data);
+    const range = max - min || 1;
+    const points = data.map((v, i) => {
+      const x = (i / Math.max(1, data.length - 1)) * width;
+      const y = height - ((v - min) / range) * (height - 4) - 2;
+      return [x, y] as const;
+    });
+    const path = points.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(" ");
+    return { d: path, dArea: `${path} L${width},${height} L0,${height} Z` };
+  }, [data, width, height]);
+
+  const color = stroke || (dir === "down" ? "var(--danger)" : dir === "flat" ? "var(--text-muted)" : "var(--accent)");
+
+  return (
+    <svg className={className} viewBox={`0 0 ${width} ${height}`} width={width} height={height} aria-hidden="true">
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={dArea} fill={`url(#${gid})`} />
+      <path d={d} stroke={color} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// ---------------- Avatar ----------------
+const AVATAR_PALETTE = ["#5B5BD6", "#1B7F5B", "#B85C00", "#0E6FB7", "#7A3AC4", "#9E2235", "#3D5DC2"];
+
+export function Avatar({
+  name = "",
+  size = 28,
+  color,
+  className
+}: {
+  name?: string;
+  size?: number;
+  color?: string;
+  className?: string;
+}) {
+  const initials = name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0] || "")
+    .join("")
+    .toUpperCase();
+  const idx =
+    name.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR_PALETTE.length;
+  const bg = color || AVATAR_PALETTE[idx];
+  return (
+    <div
+      className={cx("avatar", className)}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: bg,
+        color: "white",
+        display: "grid",
+        placeItems: "center",
+        fontSize: size * 0.4,
+        fontWeight: 600,
+        letterSpacing: "-0.01em"
+      }}
+    >
+      {initials || "U"}
+    </div>
+  );
+}
+
+// ---------------- Favicon Tile ----------------
+const FAVICON_PALETTE: Record<string, string> = {
+  indeed: "#1F3F8F",
+  linkedin: "#0A66C2",
+  amazon: "#D17A06",
+  bestbuy: "#0F4DBC",
+  booking: "#0E4DB1",
+  ycombinator: "#FB651E",
+  news: "#FB651E",
+  crunchbase: "#1463A3",
+  g2: "#FF6B2B",
+  angellist: "#0F1729",
+  apple: "#0E1726",
+  notion: "#0E1726",
+  techcrunch: "#107C41",
+  shopify: "#3D6B26",
+  etsy: "#C24A1C",
+  glassdoor: "#0CAA41",
+  hackernews: "#FB651E",
+  producthunt: "#DA552F",
+  reddit: "#D93A00",
+  wikipedia: "#0F1729",
+  nytimes: "#0F1729",
+  workable: "#3A75D8",
+  lever: "#0F1729",
+  greenhouse: "#1F8A5B",
+  jobs: "#3A75D8",
+  boards: "#1F8A5B"
+};
+
+export function FaviconTile({ host, color }: { host: string; color?: string }) {
+  const cleaned = (host || "").replace(/^www\./, "");
+  const letter = cleaned[0]?.toUpperCase() ?? "?";
+  const key = cleaned.replace(/\..*$/, "").toLowerCase();
+  const bg = color || FAVICON_PALETTE[key] || "#475467";
+  return (
+    <div
+      className="favicon"
+      style={{ background: bg, color: "white", borderColor: "transparent" }}
+      title={host}
+    >
+      {letter}
+    </div>
+  );
+}
+
+// ---------------- Empty State ----------------
+export function EmptyState({
+  icon = "spark",
+  title,
+  description,
+  action,
+  children
+}: {
+  icon?: IconName;
+  title?: ReactNode;
+  description?: ReactNode;
+  action?: ReactNode;
+  children?: ReactNode;
+}) {
+  if (children && !title && !description) {
+    return (
+      <div className="rounded-[14px] border border-dashed border-[var(--border-strong)] bg-[var(--surface-soft)] px-4 py-4 text-sm text-[var(--text-secondary)]">
+        {children}
+      </div>
+    );
+  }
+  return (
+    <div className="empty">
+      <div className="emp-icon">
+        <Icon name={icon} size={26} />
+      </div>
+      {title ? <h3>{title}</h3> : null}
+      {description ? <p>{description}</p> : null}
+      {action}
+    </div>
+  );
+}
+
+// ---------------- Segmented ----------------
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  className
+}: {
+  options: Array<{ value: T; label: string; icon?: IconName }>;
+  value: T;
+  onChange: (next: T) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cx("segmented", className)}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          className={cx(value === o.value && "on")}
+          onClick={() => onChange(o.value)}
+        >
+          {o.icon ? <Icon name={o.icon} size={12} /> : null}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------- Chip ----------------
+export function Chip({
+  label,
+  value,
+  onClick,
+  icon = "chevronDown"
+}: {
+  label?: string;
+  value?: ReactNode;
+  onClick?: () => void;
+  icon?: IconName;
+}) {
+  return (
+    <button type="button" className="chip" onClick={onClick}>
+      {label ? <span>{label}:</span> : null}
+      {value ? <span className="cv">{value}</span> : null}
+      <Icon name={icon} size={12} />
+    </button>
+  );
+}
+
+// ---------------- Tabs ----------------
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  className
+}: {
+  tabs: Array<{ value: T; label: string; count?: ReactNode }>;
+  value: T;
+  onChange: (next: T) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cx("tabs", className)}>
+      {tabs.map((t) => (
+        <button key={t.value} type="button" className={cx(value === t.value && "on")} onClick={() => onChange(t.value)}>
+          {t.label}
+          {t.count !== undefined && t.count !== null ? (
+            <span style={{ marginLeft: 6, color: "var(--text-muted)", fontWeight: 500 }}>{t.count}</span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------- Stepper ----------------
+export function Stepper({
+  steps,
+  current,
+  compact
+}: {
+  steps: string[];
+  current: number;
+  compact?: boolean;
+}) {
+  return (
+    <div className="stepper">
+      {steps.map((s, i) => (
+        <span key={s} style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
+          <div className={cx("step", i < current && "done", i === current && "active", compact && i !== current && "step-icon-only")}>
+            <span className="step-num">
+              {i < current ? <Icon name="check" size={12} strokeWidth={2.2} /> : (i + 1).toString().padStart(2, "0")}
+            </span>
+            {(!compact || i === current) && <span>{s}</span>}
+          </div>
+          {i < steps.length - 1 ? <div className="step-line" /> : null}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ---------------- Code block (legacy) ----------------
 export function CodeBlock({ children }: { children: ReactNode }) {
   return (
-    <p className="break-all rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs leading-relaxed text-slate-700">
+    <p className="break-all rounded-lg border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--text-secondary)]">
       {children}
     </p>
   );
 }
 
+// ---------------- StatCard (legacy alias used in profile view) ----------------
 export function StatCard({
   label,
   value,
   detail,
-  tone = "blue"
+  tone: _tone
 }: {
   label: string;
   value: ReactNode;
   detail?: ReactNode;
   tone?: "blue" | "green" | "amber" | "red" | "violet";
 }) {
-  const tones = {
-    blue: "from-blue-50 to-white text-blue-600",
-    green: "from-emerald-50 to-white text-emerald-600",
-    amber: "from-amber-50 to-white text-amber-600",
-    red: "from-red-50 to-white text-red-600",
-    violet: "from-violet-50 to-white text-violet-600"
-  };
-  return (
-    <Panel className={cx("overflow-hidden bg-gradient-to-br p-5", tones[tone])}>
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</h2>
-        <span className="h-2 w-2 rounded-full bg-current" />
-      </div>
-      <p className="mt-4 min-w-0 break-words text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
-      {detail ? <p className="mt-1 text-sm text-slate-500">{detail}</p> : null}
-    </Panel>
-  );
+  void _tone;
+  return <KPI label={label} value={value} delta={detail} deltaDir="flat" />;
 }
 
-export function DataTable({
-  columns,
-  rows,
-  actionLabel = "View"
-}: {
-  columns: string[];
-  rows: string[][];
-  actionLabel?: string;
-}) {
-  return (
-    <div className="overflow-auto">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50/70">
-            {columns.map((column) => (
-              <th
-                className="whitespace-nowrap px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500"
-                key={column}
-              >
-                {column}
-              </th>
-            ))}
-            <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-              Action
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((row) => (
-            <tr className="bg-white transition hover:bg-slate-50/80" key={row.join("|")}>
-              {row.map((cell, index) => (
-                <td
-                  className={cx(
-                    "max-w-[16rem] whitespace-nowrap px-5 py-4 align-middle text-slate-600",
-                    index === 0 && "font-medium text-slate-950"
-                  )}
-                  key={`${cell}-${index}`}
-                >
-                  {index === row.length - 1 ? <StatusPill status={cell} /> : cell}
-                </td>
-              ))}
-              <td className="px-5 py-4 text-right">
-                <Button
-                  className="min-h-8 px-3"
-                  type="button"
-                  variant={row[row.length - 1].includes("review") || row[row.length - 1].includes("Failed") ? "secondary" : "ghost"}
-                >
-                  {row[row.length - 1].includes("review") || row[row.length - 1].includes("Failed") ? "Repair" : actionLabel}
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+// ---------------- Helpers ----------------
+export const fmtRelative = (ts: number) => {
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return `${Math.round(diff)}s ago`;
+  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+  return `${Math.round(diff / 86400)}d ago`;
+};
+
+export const fmtDuration = (s: number) => {
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const r = Math.round(s - m * 60);
+  return `${m}m ${r}s`;
+};
+
+export const fmtInt = (n: number) => n.toLocaleString("en-US");
