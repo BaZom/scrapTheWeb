@@ -4,16 +4,9 @@ import { Fragment, type ReactNode, useState } from "react";
 
 import type { Dashboard, ExtractionRun, Recipe } from "@/lib/api";
 
+import { AccountPanel } from "./account-panels";
 import { Icon, type IconName } from "./icons";
-import {
-  DEMO_ACTIVITY,
-  DEMO_LATEST_RECORDS,
-  DEMO_RECIPES,
-  DEMO_RUNS,
-  HOSTS,
-  type DemoRecipe,
-  type DemoRun
-} from "../data/product-ui";
+import { DEMO_RECIPES, HOSTS, type DemoRecipe } from "../data/product-ui";
 import {
   Avatar,
   Badge,
@@ -41,6 +34,69 @@ type WorkspaceDataProps = {
   runs: ExtractionRun[];
 };
 
+// ---------- shared real-data helpers ----------
+function shortId(id: string) {
+  return id.slice(0, 8);
+}
+
+function domainForUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function relativeFromIso(value: string | null | undefined): string {
+  if (!value) return "—";
+  return fmtRelative(new Date(value).getTime());
+}
+
+function durationFromIso(start: string | null | undefined, end: string | null | undefined): string {
+  if (!start || !end) return "—";
+  const seconds = Math.max(0, (new Date(end).getTime() - new Date(start).getTime()) / 1000);
+  return fmtDuration(seconds);
+}
+
+function recipeNameFor(run: ExtractionRun, recipes: Recipe[]): string {
+  return recipes.find((r) => r.id === run.recipeId)?.name ?? shortId(run.recipeId);
+}
+
+function recipeFieldCount(recipe: Recipe): number {
+  const cfg = recipe.config as { fields?: unknown } | undefined;
+  return Array.isArray(cfg?.fields) ? (cfg!.fields as unknown[]).length : 0;
+}
+
+function runChangeCount(run: ExtractionRun): number {
+  return run.changes.new.length + run.changes.changed.length + run.changes.removed.length;
+}
+
+function statusGroup(status: string): "completed" | "running" | "failed" | "pending" {
+  const s = status.toLowerCase();
+  if (s === "completed" || s === "succeeded" || s === "ok") return "completed";
+  if (s === "running") return "running";
+  if (s === "failed" || s === "error") return "failed";
+  return "pending";
+}
+
+function recordColumns(records: ExtractionRun["records"], limit = 6): string[] {
+  const seen = new Set<string>();
+  for (const record of records) {
+    for (const key of Object.keys(record.data)) {
+      if (key && !seen.has(key)) seen.add(key);
+      if (seen.size >= limit) break;
+    }
+    if (seen.size >= limit) break;
+  }
+  return Array.from(seen);
+}
+
+function renderCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 // ======================================================================
 // DASHBOARD
 // ======================================================================
@@ -49,30 +105,47 @@ export function DashboardView({
   error,
   loading,
   onCreateRecipe,
-  onNavigate
+  onNavigate,
+  recipes,
+  runs
 }: WorkspaceDataProps & {
   dashboard: Dashboard | null;
   onCreateRecipe: () => void;
   onOpenProfile: () => void;
   onNavigate?: (view: "runs" | "monitors" | "recipes" | "exports" | "settings") => void;
 }) {
-  const firstName = dashboard?.user.email.split("@")[0]?.split(/[._-]/)[0] ?? "Ondrej";
-  const titleName = firstName ? firstName[0].toUpperCase() + firstName.slice(1) : "Ondrej";
-  const latestRuns = DEMO_RUNS.slice(0, 5);
+  const firstName =
+    dashboard?.user.email.split("@")[0]?.split(/[._-]/)[0] ?? "";
+  const titleName = firstName
+    ? firstName[0].toUpperCase() + firstName.slice(1)
+    : "back";
+  const latestRuns = [...runs]
+    .sort((a, b) => new Date(b.startedAt ?? 0).getTime() - new Date(a.startedAt ?? 0).getTime())
+    .slice(0, 5);
+
+  const totalRecords = runs.reduce((sum, r) => sum + r.records.length, 0);
+  const totalChanges = runs.reduce((sum, r) => sum + runChangeCount(r), 0);
+
+  const latestCompletedWithRecords = [...runs]
+    .filter((r) => r.status === "completed" && r.records.length > 0)
+    .sort((a, b) => new Date(b.finishedAt ?? 0).getTime() - new Date(a.finishedAt ?? 0).getTime())[0];
+
+  const orgName = dashboard?.organizations[0]?.name ?? "Workspace";
+  const role = dashboard?.organizations[0]?.role ?? "Member";
 
   return (
     <>
       <WorkspaceNotice error={error} loading={loading} />
       <div className="page-hero">
         <div>
-          <h2>Welcome back, {titleName}</h2>
+          <h2>Welcome{titleName ? `, ${titleName}` : " back"}</h2>
           <div className="sub">
-            Here&apos;s what&apos;s changed across your monitored sources in the last 24 hours.
+            Here&apos;s what&apos;s changed across your monitored sources.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="secondary" icon="refresh">
-            Run all (9)
+          <Button variant="secondary" icon="refresh" onClick={() => onNavigate?.("runs")}>
+            View runs
           </Button>
           <Button variant="primary" icon="wand" onClick={onCreateRecipe}>
             Open Builder
@@ -81,10 +154,10 @@ export function DashboardView({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16, marginBottom: 20 }}>
-        <KPI icon="recipe" label="Saved recipes" value="9" delta="+2 this week" deltaDir="up" spark={[3, 4, 4, 5, 5, 6, 7, 8, 9, 9, 9]} />
-        <KPI icon="runs" label="Runs" value="1,532" delta="+18.4%" deltaDir="up" spark={[12, 14, 11, 18, 22, 20, 28, 27, 31, 34, 38]} />
-        <KPI icon="records" label="Records extracted" value="24,089" delta="+3,212 this week" deltaDir="up" spark={[180, 240, 260, 290, 280, 320, 380, 420, 460, 510, 580]} />
-        <KPI icon="diff" label="Changes detected" value="146" delta="−12 vs last week" deltaDir="down" spark={[22, 18, 24, 21, 19, 16, 22, 18, 14, 16, 12]} />
+        <KPI icon="recipe" label="Saved recipes" value={fmtInt(recipes.length)} />
+        <KPI icon="runs" label="Runs" value={fmtInt(runs.length)} />
+        <KPI icon="records" label="Records extracted" value={fmtInt(totalRecords)} />
+        <KPI icon="diff" label="Changes detected" value={fmtInt(totalChanges)} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)", gap: 16 }}>
@@ -99,121 +172,105 @@ export function DashboardView({
                 </Button>
               }
             />
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th style={{ width: "44%" }}>Recipe</th>
-                  <th>Started</th>
-                  <th className="num">Records</th>
-                  <th className="num">Changes</th>
-                  <th>Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {latestRuns.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <div className="cell-main">
-                        <FaviconTile host={r.host} />
-                        <div style={{ minWidth: 0 }}>
-                          <div
-                            className="ci-name"
-                            style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 320 }}
-                          >
-                            {r.recipeName}
-                          </div>
-                          <div className="ci-sub">
-                            {r.id} · {HOSTS[r.host].display}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="muted">{fmtRelative(r.started)}</td>
-                    <td className="num tabular">
-                      {r.status === "running" || r.status === "failed" ? "—" : fmtInt(r.records)}
-                    </td>
-                    <td className="num tabular">
-                      {r.changes > 0 ? (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          <Icon name="diff" size={11} style={{ color: "var(--accent-deep)" }} />
-                          {r.changes}
-                        </span>
-                      ) : r.status === "running" || r.status === "failed" ? (
-                        "—"
-                      ) : (
-                        "0"
-                      )}
-                    </td>
-                    <td>
-                      <StatusBadge status={r.status} />
-                    </td>
-                    <td style={{ width: 30 }}>
-                      <button type="button" className="icon-btn" style={{ width: 26, height: 26, border: 0 }}>
-                        <Icon name="chevronRight" size={13} />
-                      </button>
-                    </td>
+            {latestRuns.length === 0 ? (
+              <EmptyState
+                icon="runs"
+                title="No runs yet"
+                description="Save a recipe in the Builder and run it once to populate this list."
+                action={
+                  <Button variant="primary" icon="wand" onClick={onCreateRecipe}>
+                    Open Builder
+                  </Button>
+                }
+              />
+            ) : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th style={{ width: "44%" }}>Recipe</th>
+                    <th>Started</th>
+                    <th className="num">Records</th>
+                    <th className="num">Changes</th>
+                    <th>Status</th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {latestRuns.map((r) => {
+                    const group = statusGroup(r.status);
+                    const host = domainForUrl(r.url);
+                    const recipeName = recipeNameFor(r, recipes);
+                    const changes = runChangeCount(r);
+                    return (
+                      <tr key={r.id}>
+                        <td>
+                          <div className="cell-main">
+                            <FaviconTile host={host} />
+                            <div style={{ minWidth: 0 }}>
+                              <div
+                                className="ci-name"
+                                style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 320 }}
+                              >
+                                {recipeName}
+                              </div>
+                              <div className="ci-sub">
+                                {shortId(r.id)} · {host}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="muted">{relativeFromIso(r.startedAt)}</td>
+                        <td className="num tabular">
+                          {group === "completed" ? fmtInt(r.records.length) : "—"}
+                        </td>
+                        <td className="num tabular">
+                          {group === "completed" ? (
+                            changes > 0 ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                <Icon name="diff" size={11} style={{ color: "var(--accent-deep)" }} />
+                                {changes}
+                              </span>
+                            ) : (
+                              "0"
+                            )
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td>
+                          <StatusBadge status={r.status} />
+                        </td>
+                        <td style={{ width: 30 }}>
+                          <button type="button" className="icon-btn" style={{ width: 26, height: 26, border: 0 }}>
+                            <Icon name="chevronRight" size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </Card>
 
           <Card>
             <CardHeader
               title="Latest extracted records"
-              sub="Y Combinator — Front Page · run 8f31 · 3m ago"
-              action={
-                <div style={{ display: "flex", gap: 6 }}>
-                  <Button variant="ghost" size="sm" icon="csv">
-                    CSV
-                  </Button>
-                  <Button variant="ghost" size="sm" icon="json">
-                    JSON
-                  </Button>
-                </div>
+              sub={
+                latestCompletedWithRecords
+                  ? `${recipeNameFor(latestCompletedWithRecords, recipes)} · run ${shortId(latestCompletedWithRecords.id)} · ${relativeFromIso(latestCompletedWithRecords.finishedAt)}`
+                  : "No completed runs yet"
               }
             />
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th className="num" style={{ width: 40 }}>
-                    #
-                  </th>
-                  <th>Title</th>
-                  <th>User</th>
-                  <th className="num">Points</th>
-                  <th className="num">Comments</th>
-                  <th>Age</th>
-                </tr>
-              </thead>
-              <tbody>
-                {DEMO_LATEST_RECORDS.map((r) => (
-                  <tr key={r.rank}>
-                    <td className="num muted tabular">{r.rank}</td>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <a
-                          className="row-link"
-                          href="#"
-                          onClick={(e) => e.preventDefault()}
-                          style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 460 }}
-                        >
-                          {r.title}
-                        </a>
-                        <Icon name="external" size={12} style={{ color: "var(--text-faint)" }} />
-                      </div>
-                    </td>
-                    <td className="muted mono" style={{ fontSize: 12 }}>
-                      {r.user}
-                    </td>
-                    <td className="num tabular">{r.points}</td>
-                    <td className="num tabular">{r.comments}</td>
-                    <td className="muted">{r.age}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {latestCompletedWithRecords ? (
+              <RecordsTable records={latestCompletedWithRecords.records.slice(0, 8)} />
+            ) : (
+              <EmptyState
+                icon="records"
+                title="No records yet"
+                description="Records from your latest completed run will appear here."
+              />
+            )}
           </Card>
         </div>
 
@@ -250,56 +307,75 @@ export function DashboardView({
               <Button variant="primary" icon="wand" onClick={onCreateRecipe}>
                 Open Builder
               </Button>
-              <Button variant="ghost" trailingIcon="arrowRight">
-                Watch 2-min tour
-              </Button>
             </div>
           </Card>
 
           <Card>
-            <CardHeader title="Recent activity" sub="Last 24 hours" />
+            <CardHeader title="Recent activity" sub="Most recent runs" />
             <div style={{ padding: "4px 0" }}>
-              {DEMO_ACTIVITY.map((a, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    padding: "10px 18px",
-                    borderBottom: i < DEMO_ACTIVITY.length - 1 ? "1px solid var(--divider)" : "0"
-                  }}
-                >
-                  <ActivityDot type={a.type} />
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.35 }}>{a.text}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
-                      {a.meta} · {fmtRelative(a.ts)}
-                    </div>
-                  </div>
+              {latestRuns.length === 0 ? (
+                <div style={{ padding: "20px 18px", fontSize: 13, color: "var(--text-muted)" }}>
+                  No activity yet. Run a recipe to populate the feed.
                 </div>
-              ))}
+              ) : (
+                latestRuns.map((r, i) => {
+                  const group = statusGroup(r.status);
+                  const type: "run" | "fail" | "review" =
+                    group === "failed" ? "fail" : group === "completed" ? "run" : "review";
+                  const name = recipeNameFor(r, recipes);
+                  const meta =
+                    group === "failed"
+                      ? r.errorMessage ?? "Run failed"
+                      : group === "completed"
+                        ? `${fmtInt(r.records.length)} records · ${runChangeCount(r)} changes`
+                        : r.status;
+                  const text =
+                    group === "failed"
+                      ? `Run failed for ${name}`
+                      : group === "completed"
+                        ? `Run completed for ${name}`
+                        : `Run ${r.status} for ${name}`;
+                  return (
+                    <div
+                      key={r.id}
+                      style={{
+                        display: "flex",
+                        gap: 12,
+                        padding: "10px 18px",
+                        borderBottom: i < latestRuns.length - 1 ? "1px solid var(--divider)" : "0"
+                      }}
+                    >
+                      <ActivityDot type={type} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, color: "var(--text-primary)", lineHeight: 1.35 }}>{text}</div>
+                        <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 2 }}>
+                          {meta} · {relativeFromIso(r.startedAt)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </Card>
 
           <Card>
-            <CardHeader title="Workspace" sub="Ocean Mata · Team plan" />
+            <CardHeader title="Workspace" sub={role} />
             <div style={{ padding: "12px 18px 16px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
                 <div className="ws-avatar" style={{ width: 36, height: 36, fontSize: 13, borderRadius: 9 }}>
-                  OM
+                  {orgName
+                    .split(/\s+/)
+                    .slice(0, 2)
+                    .map((p) => p[0] ?? "")
+                    .join("")
+                    .toUpperCase() || "W"}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>Ocean Mata</div>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{orgName}</div>
                   <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
-                    workspace · oceanmata.scraptheweb.app
+                    {dashboard?.user.email ?? ""}
                   </div>
-                </div>
-                <div style={{ display: "flex", marginRight: 4 }}>
-                  {["Ondrej Hrabal", "Mia Chen", "Pavel Kvas", "Luna Park"].map((n, i) => (
-                    <div key={n} style={{ marginLeft: i ? -8 : 0, border: "2px solid white", borderRadius: "50%" }}>
-                      <Avatar name={n} size={22} />
-                    </div>
-                  ))}
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 12 }}>
@@ -311,24 +387,32 @@ export function DashboardView({
                       alignItems: "center",
                       gap: 4,
                       marginTop: 2,
-                      color: "var(--success-fg)",
+                      color: dashboard?.user.email_verified ? "var(--success-fg)" : "var(--warning-fg)",
                       fontWeight: 550
                     }}
                   >
-                    <Icon name="checkCircle" size={12} /> Verified
+                    <Icon
+                      name={dashboard?.user.email_verified ? "checkCircle" : "alert"}
+                      size={12}
+                    />{" "}
+                    {dashboard?.user.email_verified ? "Verified" : "Not verified"}
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-muted)" }}>Two-factor</div>
-                  <div style={{ marginTop: 2, fontWeight: 550 }}>Enabled (TOTP)</div>
+                  <div style={{ color: "var(--text-muted)" }}>Role</div>
+                  <div style={{ marginTop: 2, fontWeight: 550 }}>{role}</div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-muted)" }}>API keys</div>
-                  <div style={{ marginTop: 2, fontWeight: 550 }}>2 active</div>
+                  <div style={{ color: "var(--text-muted)" }}>Recipes</div>
+                  <div style={{ marginTop: 2, fontWeight: 550 }} className="tabular">
+                    {fmtInt(recipes.length)}
+                  </div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-muted)" }}>Active sessions</div>
-                  <div style={{ marginTop: 2, fontWeight: 550 }}>3 devices</div>
+                  <div style={{ color: "var(--text-muted)" }}>Runs</div>
+                  <div style={{ marginTop: 2, fontWeight: 550 }} className="tabular">
+                    {fmtInt(runs.length)}
+                  </div>
                 </div>
               </div>
             </div>
@@ -336,6 +420,51 @@ export function DashboardView({
         </div>
       </div>
     </>
+  );
+}
+
+function RecordsTable({ records }: { records: ExtractionRun["records"] }) {
+  const columns = recordColumns(records, 6);
+  if (columns.length === 0) {
+    return (
+      <EmptyState
+        icon="records"
+        title="No field values"
+        description="The latest run produced records, but no field values were extracted."
+      />
+    );
+  }
+  return (
+    <table className="tbl">
+      <thead>
+        <tr>
+          {columns.map((c) => (
+            <th key={c}>{c}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((record) => (
+          <tr key={record.id}>
+            {columns.map((column) => (
+              <td key={column} style={{ maxWidth: 320 }}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}
+                >
+                  {renderCell(record.data[column])}
+                </span>
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -425,27 +554,47 @@ export function RecipesView({
   loading,
   onOpenBuilder,
   onRunRecipe,
-  recipes
+  recipes,
+  runs
 }: WorkspaceDataProps & {
   onOpenBuilder: () => void;
   onRunRecipe: (recipeId: string) => void;
 }) {
-  const [filter, setFilter] = useState<"all" | "healthy" | "review" | "failed">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "draft" | "other">("all");
+  const [query, setQuery] = useState("");
 
-  const merged = mergeRecipes(recipes);
   const counts = {
-    all: merged.length,
-    healthy: merged.filter((r) => r.status === "completed").length,
-    review: merged.filter((r) => r.status === "needs").length,
-    failed: merged.filter((r) => r.status === "failed").length
+    all: recipes.length,
+    active: recipes.filter((r) => r.status === "active").length,
+    draft: recipes.filter((r) => r.status === "draft").length,
+    other: recipes.filter((r) => r.status !== "active" && r.status !== "draft").length
   };
-  const visible = merged.filter((r) => {
-    if (filter === "all") return true;
-    if (filter === "healthy") return r.status === "completed";
-    if (filter === "review") return r.status === "needs";
-    if (filter === "failed") return r.status === "failed";
+
+  const visible = recipes.filter((r) => {
+    if (filter === "active" && r.status !== "active") return false;
+    if (filter === "draft" && r.status !== "draft") return false;
+    if (filter === "other" && (r.status === "active" || r.status === "draft")) return false;
+    if (query) {
+      const q = query.toLowerCase();
+      if (!r.name.toLowerCase().includes(q) && !r.url.toLowerCase().includes(q)) return false;
+    }
     return true;
   });
+
+  const totalFields = recipes.reduce((sum, r) => sum + recipeFieldCount(r), 0);
+  const avgFields = recipes.length ? (totalFields / recipes.length).toFixed(1) : "0";
+
+  const latestRunByRecipe = new Map<string, ExtractionRun>();
+  for (const run of runs) {
+    const existing = latestRunByRecipe.get(run.recipeId);
+    if (!existing) {
+      latestRunByRecipe.set(run.recipeId, run);
+      continue;
+    }
+    if (new Date(run.startedAt ?? 0).getTime() > new Date(existing.startedAt ?? 0).getTime()) {
+      latestRunByRecipe.set(run.recipeId, run);
+    }
+  }
 
   return (
     <>
@@ -458,9 +607,6 @@ export function RecipesView({
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="secondary" icon="download">
-            Import
-          </Button>
           <Button variant="primary" icon="plus" onClick={onOpenBuilder}>
             New recipe
           </Button>
@@ -468,24 +614,10 @@ export function RecipesView({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16, marginBottom: 16 }}>
-        <KPI icon="recipe" label="Saved recipes" value={merged.length} delta="+2 this week" deltaDir="up" spark={[3, 4, 5, 6, 7, 8, 9]} />
-        <KPI
-          icon="checkCircle"
-          label="Healthy"
-          value={counts.healthy}
-          delta={merged.length ? `${Math.round((counts.healthy / merged.length) * 100)}%` : "—"}
-          deltaDir="flat"
-          spark={[5, 5, 6, 6, 7, 7, 7]}
-        />
-        <KPI
-          icon="alert"
-          label="Needs review"
-          value={counts.review}
-          delta={counts.review > 0 ? "Selector drift" : "0"}
-          deltaDir={counts.review > 0 ? "down" : "flat"}
-          spark={[0, 0, 1, 0, 1, 0, 1]}
-        />
-        <KPI icon="diff" label="Avg fields per recipe" value="6.0" delta="—" deltaDir="flat" spark={[5, 5, 5, 6, 6, 6, 6]} />
+        <KPI icon="recipe" label="Saved recipes" value={fmtInt(recipes.length)} />
+        <KPI icon="checkCircle" label="Active" value={fmtInt(counts.active)} />
+        <KPI icon="edit" label="Draft" value={fmtInt(counts.draft)} />
+        <KPI icon="hash" label="Avg fields per recipe" value={avgFields} />
       </div>
 
       <Tabs
@@ -493,85 +625,97 @@ export function RecipesView({
         onChange={setFilter}
         tabs={[
           { value: "all", label: "All", count: counts.all },
-          { value: "healthy", label: "Healthy", count: counts.healthy },
-          { value: "review", label: "Needs review", count: counts.review },
-          { value: "failed", label: "Failed", count: counts.failed }
+          { value: "active", label: "Active", count: counts.active },
+          { value: "draft", label: "Draft", count: counts.draft },
+          { value: "other", label: "Other", count: counts.other }
         ]}
       />
 
       <div className="toolbar">
         <div className="search-box" style={{ width: 280, height: 30 }}>
           <Icon name="search" size={14} />
-          <input placeholder="Search recipes by name or domain…" />
+          <input
+            placeholder="Search recipes by name or URL…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
-        <Chip label="Domain" value="All" />
-        <Chip label="Page type" value="Any" />
-        <Chip label="Last run" value="Anytime" />
         <div className="grow" />
-        <Button variant="ghost" size="sm" icon="sort">
-          Sort: Last run
-        </Button>
-        <Segmented<"rows" | "grid">
-          value="rows"
-          onChange={() => undefined}
-          options={[
-            { value: "rows", icon: "list", label: "Rows" },
-            { value: "grid", icon: "grid", label: "Grid" }
-          ]}
-        />
       </div>
 
-      <div className="table-wrap">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th style={{ width: "30%" }}>Recipe</th>
-              <th>Domain</th>
-              <th>Page type</th>
-              <th className="num">Fields</th>
-              <th>Last run</th>
-              <th className="num">Records</th>
-              <th>Status</th>
-              <th style={{ width: 130, textAlign: "right" }}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((r) => (
-              <tr key={r.id}>
-                <td>
-                  <div className="cell-main">
-                    <FaviconTile host={r.host} />
-                    <div style={{ minWidth: 0 }}>
-                      <div className="ci-name">{r.name}</div>
-                      <div className="ci-sub">{r.id}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="muted">{HOSTS[r.host]?.display ?? r.host}</td>
-                <td>
-                  <Badge tone="outline">{r.pageType}</Badge>
-                </td>
-                <td className="num tabular">{r.fields}</td>
-                <td className="muted">{fmtRelative(r.lastRun)}</td>
-                <td className="num tabular">{fmtInt(r.records)}</td>
-                <td>
-                  <StatusBadge status={r.status === "completed" ? "healthy" : r.status} />
-                </td>
-                <td>
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
-                    <Button variant="secondary" size="sm" icon="play" onClick={() => r.realId && onRunRecipe(r.realId)}>
-                      Run now
-                    </Button>
-                    <button type="button" className="icon-btn" style={{ width: 28, height: 28 }}>
-                      <Icon name="more" size={14} />
-                    </button>
-                  </div>
-                </td>
+      {visible.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="recipe"
+            title={recipes.length === 0 ? "No recipes yet" : "No matches"}
+            description={
+              recipes.length === 0
+                ? "Build your first extraction recipe from any public listing page."
+                : "Try clearing filters or search."
+            }
+            action={
+              recipes.length === 0 ? (
+                <Button variant="primary" icon="wand" onClick={onOpenBuilder}>
+                  Open Builder
+                </Button>
+              ) : null
+            }
+          />
+        </Card>
+      ) : (
+        <div className="table-wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th style={{ width: "30%" }}>Recipe</th>
+                <th>Domain</th>
+                <th>Page type</th>
+                <th className="num">Fields</th>
+                <th>Last run</th>
+                <th className="num">Records</th>
+                <th>Status</th>
+                <th style={{ width: 130, textAlign: "right" }}>Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {visible.map((r) => {
+                const host = domainForUrl(r.url);
+                const latest = latestRunByRecipe.get(r.id);
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      <div className="cell-main">
+                        <FaviconTile host={host} />
+                        <div style={{ minWidth: 0 }}>
+                          <div className="ci-name">{r.name}</div>
+                          <div className="ci-sub">{shortId(r.id)}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="muted">{host}</td>
+                    <td>
+                      <Badge tone="outline">{r.pageType}</Badge>
+                    </td>
+                    <td className="num tabular">{recipeFieldCount(r)}</td>
+                    <td className="muted">{latest ? relativeFromIso(latest.startedAt) : "—"}</td>
+                    <td className="num tabular">{latest ? fmtInt(latest.records.length) : "—"}</td>
+                    <td>
+                      <StatusBadge status={r.status} />
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
+                        <Button variant="secondary" size="sm" icon="play" onClick={() => onRunRecipe(r.id)}>
+                          Run now
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
@@ -839,14 +983,33 @@ export function RunsView({
   onOpenRun: (run: ExtractionRun) => void;
 }) {
   const [filter, setFilter] = useState<"all" | "running" | "completed" | "failed">("all");
-  const merged = mergeRuns(runs, recipes);
+  const [query, setQuery] = useState("");
+
   const counts = {
-    all: merged.length,
-    running: merged.filter((r) => r.status === "running").length,
-    completed: merged.filter((r) => r.status === "completed").length,
-    failed: merged.filter((r) => r.status === "failed").length
+    all: runs.length,
+    running: runs.filter((r) => statusGroup(r.status) === "running").length,
+    completed: runs.filter((r) => statusGroup(r.status) === "completed").length,
+    failed: runs.filter((r) => statusGroup(r.status) === "failed").length
   };
-  const visible = merged.filter((r) => filter === "all" || r.status === filter);
+
+  const sorted = [...runs].sort(
+    (a, b) => new Date(b.startedAt ?? 0).getTime() - new Date(a.startedAt ?? 0).getTime()
+  );
+
+  const visible = sorted.filter((r) => {
+    if (filter !== "all" && statusGroup(r.status) !== filter) return false;
+    if (query) {
+      const q = query.toLowerCase();
+      const recipeName = recipeNameFor(r, recipes).toLowerCase();
+      if (!r.id.toLowerCase().includes(q) && !recipeName.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const totalRecords = runs.reduce((sum, r) => sum + r.records.length, 0);
+  const latestCompletedWithRecords = sorted.find(
+    (r) => r.status === "completed" && r.records.length > 0
+  );
 
   return (
     <>
@@ -858,21 +1021,13 @@ export function RunsView({
             Execution history. Each run produces a set of records and an optional change diff.
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="secondary" icon="refresh">
-            Refresh
-          </Button>
-          <Button variant="primary" icon="play">
-            Run all
-          </Button>
-        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16, marginBottom: 16 }}>
-        <KPI icon="runs" label="Runs (24h)" value="38" delta="+12% vs prev day" deltaDir="up" spark={[2, 3, 3, 4, 5, 4, 5, 5, 6, 7, 8]} />
-        <KPI icon="checkCircle" label="Success rate" value="96%" delta="+1.4%" deltaDir="up" spark={[92, 93, 93, 94, 94, 95, 95, 96, 96, 96, 96]} />
-        <KPI icon="clock" label="Median latency" value="5.2s" delta="−0.8s" deltaDir="down" spark={[7, 6.5, 6, 5.8, 5.4, 5.5, 5.3, 5.2, 5.2, 5, 5.2]} />
-        <KPI icon="alert" label="Failed (24h)" value="2" delta="Amazon DP" deltaDir="down" spark={[0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1]} />
+        <KPI icon="runs" label="Runs" value={fmtInt(runs.length)} />
+        <KPI icon="checkCircle" label="Completed" value={fmtInt(counts.completed)} />
+        <KPI icon="alert" label="Failed" value={fmtInt(counts.failed)} />
+        <KPI icon="records" label="Records extracted" value={fmtInt(totalRecords)} />
       </div>
 
       <Tabs
@@ -889,143 +1044,113 @@ export function RunsView({
       <div className="toolbar">
         <div className="search-box" style={{ width: 280, height: 30 }}>
           <Icon name="search" size={14} />
-          <input placeholder="Search by run ID or recipe…" />
+          <input
+            placeholder="Search by run ID or recipe…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
-        <Chip label="Recipe" value="All" />
-        <Chip label="Started" value="Last 7 days" />
         <div className="grow" />
-        <Button variant="ghost" size="sm" icon="sort">
-          Sort: Newest
-        </Button>
       </div>
 
-      <div className="table-wrap" style={{ marginBottom: 20 }}>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Run</th>
-              <th style={{ width: "26%" }}>Recipe</th>
-              <th>Source</th>
-              <th>Started</th>
-              <th className="num">Duration</th>
-              <th className="num">Records</th>
-              <th className="num">Changes</th>
-              <th>Status</th>
-              <th style={{ width: 60, textAlign: "right" }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((r) => (
-              <tr key={r.id}>
-                <td className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  {r.id}
-                </td>
-                <td>
-                  <div className="cell-main">
-                    <FaviconTile host={r.host} />
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        className="ci-name"
-                        style={{
-                          overflow: "hidden",
-                          whiteSpace: "nowrap",
-                          textOverflow: "ellipsis",
-                          maxWidth: 240
-                        }}
-                      >
-                        {r.recipeName}
+      {visible.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="runs"
+            title={runs.length === 0 ? "No runs yet" : "No matches"}
+            description={
+              runs.length === 0
+                ? "Run a saved recipe from the Recipes page to populate the history."
+                : "Try clearing filters or search."
+            }
+          />
+        </Card>
+      ) : (
+        <div className="table-wrap" style={{ marginBottom: 20 }}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th style={{ width: "26%" }}>Recipe</th>
+                <th>Source</th>
+                <th>Started</th>
+                <th className="num">Duration</th>
+                <th className="num">Records</th>
+                <th className="num">Changes</th>
+                <th>Status</th>
+                <th style={{ width: 60, textAlign: "right" }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((r) => {
+                const group = statusGroup(r.status);
+                const host = domainForUrl(r.url);
+                return (
+                  <tr key={r.id}>
+                    <td className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      {shortId(r.id)}
+                    </td>
+                    <td>
+                      <div className="cell-main">
+                        <FaviconTile host={host} />
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            className="ci-name"
+                            style={{
+                              overflow: "hidden",
+                              whiteSpace: "nowrap",
+                              textOverflow: "ellipsis",
+                              maxWidth: 240
+                            }}
+                          >
+                            {recipeNameFor(r, recipes)}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="muted mono" style={{ fontSize: 12 }}>
-                  {HOSTS[r.host]?.display ?? r.host}
-                </td>
-                <td className="muted">{fmtRelative(r.started)}</td>
-                <td className="num tabular">{r.duration ? fmtDuration(r.duration) : "—"}</td>
-                <td className="num tabular">
-                  {r.status === "running" || r.status === "failed" ? "—" : fmtInt(r.records)}
-                </td>
-                <td className="num tabular">
-                  {r.status === "running" || r.status === "failed" ? "—" : r.changes || "0"}
-                </td>
-                <td>
-                  <StatusBadge status={r.status} />
-                </td>
-                <td>
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      style={{ width: 28, height: 28 }}
-                      onClick={() => r.real && onOpenRun(r.real)}
-                    >
-                      <Icon name="chevronRight" size={14} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    </td>
+                    <td className="muted mono" style={{ fontSize: 12 }}>
+                      {host}
+                    </td>
+                    <td className="muted">{relativeFromIso(r.startedAt)}</td>
+                    <td className="num tabular">{durationFromIso(r.startedAt, r.finishedAt)}</td>
+                    <td className="num tabular">
+                      {group === "completed" ? fmtInt(r.records.length) : "—"}
+                    </td>
+                    <td className="num tabular">
+                      {group === "completed" ? runChangeCount(r) : "—"}
+                    </td>
+                    <td>
+                      <StatusBadge status={r.status} />
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          style={{ width: 28, height: 28 }}
+                          onClick={() => onOpenRun(r)}
+                        >
+                          <Icon name="chevronRight" size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      <Card>
-        <CardHeader
-          title="Latest extracted records"
-          sub="From the most recent completed run — Y Combinator · Front Page"
-          action={
-            <div style={{ display: "flex", gap: 6 }}>
-              <Button variant="ghost" size="sm" icon="csv">
-                CSV
-              </Button>
-              <Button variant="ghost" size="sm" icon="json">
-                JSON
-              </Button>
-            </div>
-          }
-        />
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th className="num" style={{ width: 40 }}>
-                #
-              </th>
-              <th>Title</th>
-              <th>User</th>
-              <th className="num">Points</th>
-              <th className="num">Comments</th>
-              <th>Age</th>
-            </tr>
-          </thead>
-          <tbody>
-            {DEMO_LATEST_RECORDS.map((r) => (
-              <tr key={r.rank}>
-                <td className="num muted tabular">{r.rank}</td>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <a
-                      className="row-link"
-                      href="#"
-                      onClick={(e) => e.preventDefault()}
-                      style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 520 }}
-                    >
-                      {r.title}
-                    </a>
-                    <Icon name="external" size={12} style={{ color: "var(--text-faint)" }} />
-                  </div>
-                </td>
-                <td className="muted mono" style={{ fontSize: 12 }}>
-                  {r.user}
-                </td>
-                <td className="num tabular">{r.points}</td>
-                <td className="num tabular">{r.comments}</td>
-                <td className="muted">{r.age}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      {latestCompletedWithRecords ? (
+        <Card>
+          <CardHeader
+            title="Latest extracted records"
+            sub={`From ${recipeNameFor(latestCompletedWithRecords, recipes)} · run ${shortId(latestCompletedWithRecords.id)} · ${relativeFromIso(latestCompletedWithRecords.finishedAt)}`}
+          />
+          <RecordsTable records={latestCompletedWithRecords.records.slice(0, 10)} />
+        </Card>
+      ) : null}
     </>
   );
 }
@@ -1044,8 +1169,18 @@ export function ExportsView({
   exportBusy: "csv" | "json" | null;
   onDownloadExport: (runId: string, format: "csv" | "json") => void;
 }) {
-  const merged = mergeRuns(runs, recipes);
-  const completed = merged.filter((r) => r.status === "completed");
+  const [query, setQuery] = useState("");
+  const completed = [...runs]
+    .filter((r) => r.status === "completed")
+    .sort((a, b) => new Date(b.finishedAt ?? 0).getTime() - new Date(a.finishedAt ?? 0).getTime());
+
+  const visible = completed.filter((r) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return r.id.toLowerCase().includes(q) || recipeNameFor(r, recipes).toLowerCase().includes(q);
+  });
+
+  const totalRecords = completed.reduce((sum, r) => sum + r.records.length, 0);
 
   return (
     <>
@@ -1057,21 +1192,13 @@ export function ExportsView({
             CSV and JSON exports are generated from completed runs. Pick a run, choose a format, and download.
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="secondary" icon="webhook">
-            Webhooks
-          </Button>
-          <Button variant="primary" icon="download">
-            Bulk export
-          </Button>
-        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16, marginBottom: 20 }}>
-        <KPI icon="csv" label="CSV exports (30d)" value="84" delta="+18" deltaDir="up" spark={[3, 4, 3, 5, 4, 6, 7, 8, 9, 10, 12]} />
-        <KPI icon="json" label="JSON exports (30d)" value="61" delta="+22" deltaDir="up" spark={[1, 2, 3, 4, 5, 5, 7, 8, 9, 10, 11]} />
-        <KPI icon="records" label="Records exported" value="74,209" delta="+12,840" deltaDir="up" spark={[400, 420, 500, 540, 600, 700, 800, 820, 900, 950, 1100]} />
-        <KPI icon="webhook" label="Webhook deliveries" value="312" delta="all OK" deltaDir="up" spark={[10, 12, 14, 15, 18, 18, 20, 22, 24, 26, 28]} />
+        <KPI icon="checkCircle" label="Completed runs" value={fmtInt(completed.length)} />
+        <KPI icon="records" label="Records available" value={fmtInt(totalRecords)} />
+        <KPI icon="csv" label="CSV exports" value={fmtInt(completed.length)} />
+        <KPI icon="json" label="JSON exports" value={fmtInt(completed.length)} />
       </div>
 
       <Card style={{ marginBottom: 20, background: "var(--surface-soft)", borderStyle: "dashed" }}>
@@ -1098,95 +1225,110 @@ export function ExportsView({
               Failed or queued runs don&apos;t appear here. To export from a draft recipe, run it once from the Builder.
             </div>
           </div>
-          <Button variant="ghost" size="sm" trailingIcon="external">
-            Read docs
-          </Button>
         </div>
       </Card>
 
       <div className="toolbar">
         <div className="search-box" style={{ width: 280, height: 30 }}>
           <Icon name="search" size={14} />
-          <input placeholder="Search exportable runs…" />
+          <input
+            placeholder="Search exportable runs…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
-        <Chip label="Format" value="CSV + JSON" />
-        <Chip label="Completed" value="Last 30 days" />
         <div className="grow" />
-        <Button variant="ghost" size="sm" icon="sort">
-          Sort: Newest
-        </Button>
       </div>
 
-      <div className="table-wrap">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Run</th>
-              <th style={{ width: "26%" }}>Recipe</th>
-              <th>Source</th>
-              <th className="num">Records</th>
-              <th>Completed</th>
-              <th>Status</th>
-              <th style={{ width: 240, textAlign: "right" }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {completed.map((r) => (
-              <tr key={r.id}>
-                <td className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  {r.id}
-                </td>
-                <td>
-                  <div className="cell-main">
-                    <FaviconTile host={r.host} />
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        className="ci-name"
-                        style={{ overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", maxWidth: 240 }}
-                      >
-                        {r.recipeName}
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="muted mono" style={{ fontSize: 12 }}>
-                  {HOSTS[r.host]?.display ?? r.host}
-                </td>
-                <td className="num tabular">{fmtInt(r.records)}</td>
-                <td className="muted">{fmtRelative(r.started)}</td>
-                <td>
-                  <StatusBadge status="completed" />
-                </td>
-                <td>
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon="csv"
-                      disabled={!r.real || exportBusy === "csv"}
-                      onClick={() => r.real && onDownloadExport(r.real.id, "csv")}
-                    >
-                      CSV
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon="json"
-                      disabled={!r.real || exportBusy === "json"}
-                      onClick={() => r.real && onDownloadExport(r.real.id, "json")}
-                    >
-                      JSON
-                    </Button>
-                    <button type="button" className="icon-btn" style={{ width: 28, height: 28 }} title="More">
-                      <Icon name="more" size={14} />
-                    </button>
-                  </div>
-                </td>
+      {visible.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="exports"
+            title={completed.length === 0 ? "No exports available" : "No matches"}
+            description={
+              completed.length === 0
+                ? "Run a recipe and wait for it to complete. Completed runs become exportable."
+                : "Try clearing the search."
+            }
+          />
+        </Card>
+      ) : (
+        <div className="table-wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th style={{ width: "26%" }}>Recipe</th>
+                <th>Source</th>
+                <th className="num">Records</th>
+                <th>Completed</th>
+                <th>Status</th>
+                <th style={{ width: 200, textAlign: "right" }}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {visible.map((r) => {
+                const host = domainForUrl(r.url);
+                return (
+                  <tr key={r.id}>
+                    <td className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      {shortId(r.id)}
+                    </td>
+                    <td>
+                      <div className="cell-main">
+                        <FaviconTile host={host} />
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            className="ci-name"
+                            style={{
+                              overflow: "hidden",
+                              whiteSpace: "nowrap",
+                              textOverflow: "ellipsis",
+                              maxWidth: 240
+                            }}
+                          >
+                            {recipeNameFor(r, recipes)}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="muted mono" style={{ fontSize: 12 }}>
+                      {host}
+                    </td>
+                    <td className="num tabular">{fmtInt(r.records.length)}</td>
+                    <td className="muted">{relativeFromIso(r.finishedAt)}</td>
+                    <td>
+                      <StatusBadge status="completed" />
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon="csv"
+                          disabled={exportBusy === "csv"}
+                          onClick={() => onDownloadExport(r.id, "csv")}
+                        >
+                          CSV
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon="json"
+                          disabled={exportBusy === "json"}
+                          onClick={() => onDownloadExport(r.id, "json")}
+                        >
+                          JSON
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
@@ -1203,7 +1345,17 @@ type SettingsTab =
   | "security"
   | "billing";
 
-export function SettingsView() {
+export function SettingsView({
+  dashboard,
+  accessToken,
+  onVerified,
+  onSessionRevoked
+}: {
+  dashboard: Dashboard | null;
+  accessToken: string | null;
+  onVerified: () => void;
+  onSessionRevoked: () => void;
+}) {
   const [tab, setTab] = useState<SettingsTab>("workspace");
   return (
     <>
@@ -1219,7 +1371,7 @@ export function SettingsView() {
         onChange={setTab}
         tabs={[
           { value: "workspace", label: "Workspace" },
-          { value: "members", label: "Members", count: 4 },
+          { value: "members", label: "Members", count: 1 },
           { value: "notifications", label: "Notifications" },
           { value: "integrations", label: "Integrations" },
           { value: "keys", label: "API keys" },
@@ -1229,12 +1381,25 @@ export function SettingsView() {
       />
 
       <div style={{ marginTop: 24 }}>
-        {tab === "workspace" && <SettingsWorkspace />}
-        {tab === "members" && <SettingsMembers />}
+        {tab === "workspace" && <SettingsWorkspace dashboard={dashboard} />}
+        {tab === "members" && <SettingsMembers dashboard={dashboard} />}
         {tab === "notifications" && <SettingsNotifications />}
         {tab === "integrations" && <SettingsIntegrations />}
-        {tab === "keys" && <SettingsApiKeys />}
-        {tab === "security" && <SettingsSecurity />}
+        {tab === "keys" && (
+          accessToken ? (
+            <AccountPanel
+              accessToken={accessToken}
+              emailVerified={dashboard?.user.email_verified ?? false}
+              onVerified={onVerified}
+              onSessionRevoked={onSessionRevoked}
+            />
+          ) : (
+            <Card>
+              <EmptyState icon="key" title="Sign in required" description="Sign in to manage API keys." />
+            </Card>
+          )
+        )}
+        {tab === "security" && <SettingsSecurity dashboard={dashboard} />}
         {tab === "billing" && <SettingsBilling />}
       </div>
     </>
@@ -1271,97 +1436,42 @@ function SettingsRow({
   );
 }
 
-function SettingsWorkspace() {
+function SettingsWorkspace({ dashboard }: { dashboard: Dashboard | null }) {
+  const org = dashboard?.organizations[0];
   return (
     <Card style={{ padding: "4px 24px 24px" }}>
       <SettingsRow title="Workspace identity" description="Shown to teammates in the app and on exports.">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <FieldLabel label="Workspace name">
-            <TextInput defaultValue="Ocean Mata" />
+            <TextInput value={org?.name ?? ""} readOnly disabled />
           </FieldLabel>
-          <FieldLabel label="Slug">
-            <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-              <span
-                style={{
-                  height: 34,
-                  padding: "0 10px",
-                  background: "var(--surface-sunken)",
-                  border: "1px solid var(--border-strong)",
-                  borderRight: 0,
-                  borderRadius: "7px 0 0 7px",
-                  display: "grid",
-                  placeItems: "center",
-                  fontSize: 12.5,
-                  color: "var(--text-muted)"
-                }}
-              >
-                scraptheweb.app/
-              </span>
-              <TextInput defaultValue="oceanmata" style={{ borderRadius: "0 7px 7px 0" }} />
-            </div>
+          <FieldLabel label="Your role">
+            <TextInput value={org?.role ?? "—"} readOnly disabled />
           </FieldLabel>
         </div>
       </SettingsRow>
 
-      <SettingsRow title="Default export format" description="New users will see this format selected first.">
-        <Segmented<"csv" | "json">
-          value="csv"
-          onChange={() => undefined}
-          options={[
-            { value: "csv", icon: "csv", label: "CSV" },
-            { value: "json", icon: "json", label: "JSON" }
-          ]}
-        />
-      </SettingsRow>
-
-      <SettingsRow title="Brand color" description="Used on shared exports and webhook badges.">
-        <div style={{ display: "flex", gap: 8 }}>
-          {["#5B5BD6", "#1B7F5B", "#0E6FB7", "#B85C00", "#7A3AC4", "#0E1726"].map((c, i) => (
-            <div
-              key={c}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                background: c,
-                border: i === 0 ? "2px solid var(--text-primary)" : "1px solid var(--border)",
-                cursor: "pointer",
-                boxShadow: "var(--shadow-xs)"
-              }}
-            />
-          ))}
-        </div>
-      </SettingsRow>
-
-      <SettingsRow
-        title="Danger zone"
-        description="Deleting the workspace removes all recipes, runs, and exports. This action is irreversible."
-      >
-        <Button variant="danger" icon="trash">
-          Delete workspace…
-        </Button>
+      <SettingsRow title="Workspace updates" description="Renaming the workspace and changing branding will be available once workspace update endpoints ship.">
+        <Badge tone="outline" dot>
+          Not yet implemented
+        </Badge>
       </SettingsRow>
     </Card>
   );
 }
 
-function SettingsMembers() {
-  const members = [
-    { name: "Ondrej Hrabal", email: "ondrej@oceanmata.com", role: "Owner", added: "Jan 12, 2025" },
-    { name: "Mia Chen", email: "mia@oceanmata.com", role: "Admin", added: "Feb 4, 2025" },
-    { name: "Pavel Kvas", email: "pavel@oceanmata.com", role: "Member", added: "Mar 28, 2025" },
-    { name: "Luna Park", email: "luna@oceanmata.com", role: "Viewer", added: "Apr 09, 2025" }
-  ];
+function SettingsMembers({ dashboard }: { dashboard: Dashboard | null }) {
+  const userEmail = dashboard?.user.email ?? "";
+  const userName = userEmail.split("@")[0]?.replace(/[._-]/g, " ") || "Account";
+  const role = dashboard?.organizations[0]?.role ?? "Owner";
   return (
     <div>
       <div className="toolbar" style={{ padding: 0, marginBottom: 16 }}>
-        <div className="search-box" style={{ width: 280, height: 30 }}>
-          <Icon name="search" size={14} />
-          <input placeholder="Search members…" />
+        <div style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
+          Inviting teammates will be available once member management endpoints ship.
         </div>
-        <Chip label="Role" value="All" />
         <div className="grow" />
-        <Button variant="primary" icon="plus">
+        <Button variant="primary" icon="plus" disabled>
           Invite
         </Button>
       </div>
@@ -1371,35 +1481,41 @@ function SettingsMembers() {
             <tr>
               <th>Member</th>
               <th>Role</th>
-              <th>Added</th>
+              <th>Status</th>
               <th style={{ textAlign: "right" }}></th>
             </tr>
           </thead>
           <tbody>
-            {members.map((m) => (
-              <tr key={m.email}>
+            {userEmail ? (
+              <tr>
                 <td>
                   <div className="cell-main">
-                    <Avatar name={m.name} size={28} />
+                    <Avatar name={userName} size={28} />
                     <div>
-                      <div className="ci-name">{m.name}</div>
+                      <div className="ci-name">{userName}</div>
                       <div className="ci-sub" style={{ fontFamily: "var(--font-sans)" }}>
-                        {m.email}
+                        {userEmail}
                       </div>
                     </div>
                   </div>
                 </td>
                 <td>
-                  <Badge tone={m.role === "Owner" ? "accent" : "outline"}>{m.role}</Badge>
+                  <Badge tone="accent">{role}</Badge>
                 </td>
-                <td className="muted">{m.added}</td>
+                <td>
+                  <StatusBadge status={dashboard?.user.email_verified ? "verified" : "pending"} />
+                </td>
                 <td style={{ textAlign: "right" }}>
-                  <button type="button" className="icon-btn" style={{ width: 28, height: 28 }}>
-                    <Icon name="more" size={14} />
-                  </button>
+                  <Badge tone="outline">You</Badge>
                 </td>
               </tr>
-            ))}
+            ) : (
+              <tr>
+                <td colSpan={4} style={{ padding: "24px 16px", color: "var(--text-muted)" }}>
+                  No members yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -1408,135 +1524,25 @@ function SettingsMembers() {
 }
 
 function SettingsNotifications() {
-  const channels = [
-    {
-      id: "run_completed",
-      label: "Run completed",
-      desc: "When a run finishes with at least one record",
-      email: true,
-      slack: true,
-      webhook: false
-    },
-    {
-      id: "run_failed",
-      label: "Run failed",
-      desc: "Selector returned 0, page didn't load, etc.",
-      email: true,
-      slack: true,
-      webhook: true
-    },
-    {
-      id: "changes",
-      label: "Changes detected",
-      desc: "New, changed, or removed records since last run",
-      email: true,
-      slack: false,
-      webhook: true
-    },
-    {
-      id: "needs_review",
-      label: "Needs review",
-      desc: "When a selector drifts and the recipe can't auto-repair",
-      email: true,
-      slack: true,
-      webhook: false
-    },
-    {
-      id: "quota",
-      label: "Quota threshold",
-      desc: "When the workspace passes 80% of monthly records",
-      email: true,
-      slack: false,
-      webhook: false
-    }
-  ];
   return (
     <Card>
-      <table className="tbl">
-        <thead>
-          <tr>
-            <th style={{ width: "44%" }}>Event</th>
-            <th style={{ width: 90 }}>Email</th>
-            <th style={{ width: 90 }}>Slack</th>
-            <th style={{ width: 110 }}>Webhook</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {channels.map((c) => (
-            <tr key={c.id}>
-              <td>
-                <div className="ci-name">{c.label}</div>
-                <div className="ci-sub" style={{ fontFamily: "var(--font-sans)" }}>
-                  {c.desc}
-                </div>
-              </td>
-              <td>
-                <Toggle initial={c.email} />
-              </td>
-              <td>
-                <Toggle initial={c.slack} />
-              </td>
-              <td>
-                <Toggle initial={c.webhook} />
-              </td>
-              <td>
-                <Button variant="ghost" size="sm" trailingIcon="chevronRight">
-                  Configure
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <EmptyState
+        icon="bell"
+        title="Notification routing — not yet implemented"
+        description="Email, Slack, and webhook delivery for run completed / failed / changes / quota events ship with the monitoring milestone."
+      />
     </Card>
   );
 }
 
-function Toggle({ initial }: { initial: boolean }) {
-  const [on, setOn] = useState(initial);
-  return (
-    <button
-      type="button"
-      onClick={() => setOn(!on)}
-      style={{
-        width: 32,
-        height: 18,
-        borderRadius: 999,
-        background: on ? "var(--accent)" : "var(--surface-sunken)",
-        border: on ? "0" : "1px solid var(--border-strong)",
-        position: "relative",
-        padding: 0,
-        transition: "background .15s",
-        cursor: "pointer"
-      }}
-      aria-pressed={on}
-    >
-      <span
-        style={{
-          position: "absolute",
-          top: on ? 2 : 1,
-          left: on ? 16 : 1,
-          width: 14,
-          height: 14,
-          borderRadius: "50%",
-          background: "white",
-          boxShadow: "0 1px 2px rgba(0,0,0,.2)",
-          transition: "left .15s"
-        }}
-      />
-    </button>
-  );
-}
-
 function SettingsIntegrations() {
-  const ints: Array<{ id: string; name: string; desc: string; icon: IconName; connected: boolean; meta?: string }> = [
-    { id: "slack", name: "Slack", desc: "Send alerts to channels or DMs", icon: "slack", connected: true, meta: "#monitors-alerts" },
-    { id: "webhook", name: "Webhook", desc: "POST records to any HTTP endpoint", icon: "webhook", connected: true, meta: "2 endpoints" },
-    { id: "sheets", name: "Google Sheets", desc: "Append records to a spreadsheet", icon: "grid", connected: false },
-    { id: "zapier", name: "Zapier", desc: "Trigger thousands of apps on each run", icon: "zap", connected: false },
-    { id: "github", name: "GitHub Issues", desc: "Open issues on detected changes", icon: "github", connected: false },
-    { id: "supabase", name: "Supabase", desc: "Sync records to a Postgres table", icon: "database", connected: false }
+  const ints: Array<{ id: string; name: string; desc: string; icon: IconName }> = [
+    { id: "slack", name: "Slack", desc: "Send alerts to channels or DMs", icon: "slack" },
+    { id: "webhook", name: "Webhook", desc: "POST records to any HTTP endpoint", icon: "webhook" },
+    { id: "sheets", name: "Google Sheets", desc: "Append records to a spreadsheet", icon: "grid" },
+    { id: "zapier", name: "Zapier", desc: "Trigger thousands of apps on each run", icon: "zap" },
+    { id: "github", name: "GitHub Issues", desc: "Open issues on detected changes", icon: "github" },
+    { id: "supabase", name: "Supabase", desc: "Sync records to a Postgres table", icon: "database" }
   ];
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
@@ -1561,161 +1567,38 @@ function SettingsIntegrations() {
               <div style={{ fontWeight: 600, fontSize: 13.5 }}>{i.name}</div>
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{i.desc}</div>
             </div>
-            {i.connected ? (
-              <Badge tone="success" dot>
-                Connected
-              </Badge>
-            ) : null}
+            <Badge tone="outline">Coming soon</Badge>
           </div>
-          {i.connected ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingTop: 6,
-                borderTop: "1px solid var(--divider)"
-              }}
-            >
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{i.meta}</span>
-              <Button variant="ghost" size="sm">
-                Configure
-              </Button>
-            </div>
-          ) : (
-            <Button variant="secondary" size="sm" icon="plus" style={{ alignSelf: "flex-start" }}>
-              Connect
-            </Button>
-          )}
         </Card>
       ))}
     </div>
   );
 }
 
-function SettingsApiKeys() {
-  const keys = [
-    { id: "k1", name: "Production", prefix: "stw_live_8f31…b2", created: "Mar 21, 2025", last: "3 minutes ago" },
-    { id: "k2", name: "Local dev", prefix: "stw_test_4a90…d1", created: "Jan 09, 2025", last: "yesterday" }
-  ];
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
-          API keys grant programmatic access to your workspace&apos;s recipes and runs. Treat them like passwords.
-        </div>
-        <Button variant="primary" icon="plus">
-          Create key
-        </Button>
-      </div>
-      <div className="table-wrap">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Key</th>
-              <th>Created</th>
-              <th>Last used</th>
-              <th style={{ textAlign: "right" }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {keys.map((k) => (
-              <tr key={k.id}>
-                <td className="ci-name">{k.name}</td>
-                <td className="mono" style={{ fontSize: 12 }}>
-                  {k.prefix}
-                </td>
-                <td className="muted">{k.created}</td>
-                <td className="muted">{k.last}</td>
-                <td style={{ textAlign: "right" }}>
-                  <Button variant="danger" size="sm" icon="trash">
-                    Revoke
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div style={{ marginTop: 24 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>Active sessions</div>
-        <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 12 }}>
-          Devices currently signed in to ondrej@oceanmata.com.
-        </div>
-        <Card>
-          {[
-            { device: "Macbook Pro · Chrome", loc: "Prague, CZ", time: "Active now", current: true },
-            { device: "iPhone 15 · Safari", loc: "Prague, CZ", time: "2 hours ago" },
-            { device: "Macbook Air · Safari", loc: "Berlin, DE", time: "3 days ago" }
-          ].map((s, i) => (
-            <div
-              key={i}
-              style={{
-                padding: "12px 18px",
-                borderBottom: i < 2 ? "1px solid var(--divider)" : 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 12
-              }}
-            >
-              <Icon name="shield" size={16} style={{ color: "var(--text-muted)" }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 550, fontSize: 13 }}>
-                  {s.device} {s.current ? <Badge tone="accent">This device</Badge> : null}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  {s.loc} · {s.time}
-                </div>
-              </div>
-              {!s.current ? (
-                <Button variant="danger" size="sm">
-                  Revoke
-                </Button>
-              ) : null}
-            </div>
-          ))}
-          <div style={{ padding: 14, display: "flex", justifyContent: "flex-end" }}>
-            <Button variant="danger" icon="lock">
-              Revoke all other sessions
-            </Button>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function SettingsSecurity() {
+function SettingsSecurity({ dashboard }: { dashboard: Dashboard | null }) {
+  const email = dashboard?.user.email ?? "";
+  const verified = dashboard?.user.email_verified ?? false;
   return (
     <Card style={{ padding: "4px 24px 24px" }}>
       <SettingsRow title="Email address" description="Used for sign-in, alerts, and password reset.">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <TextInput defaultValue="ondrej@oceanmata.com" style={{ maxWidth: 320 }} />
-          <Badge tone="success" dot>
-            Verified
-          </Badge>
+          <TextInput value={email} readOnly disabled style={{ maxWidth: 320 }} />
+          <StatusBadge status={verified ? "verified" : "pending"} />
         </div>
       </SettingsRow>
-      <SettingsRow title="Password" description="Last changed 38 days ago.">
-        <Button variant="secondary" icon="key">
-          Change password
-        </Button>
+      <SettingsRow
+        title="Password & two-factor"
+        description="Self-service password change and TOTP enrollment will be available once the security endpoints ship."
+      >
+        <Badge tone="outline" dot>
+          Not yet implemented
+        </Badge>
       </SettingsRow>
-      <SettingsRow title="Two-factor auth" description="An authenticator app or hardware security key.">
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Badge tone="success" dot>
-            Enabled — TOTP
-          </Badge>
-          <Button variant="ghost" size="sm">
-            Manage devices
-          </Button>
-        </div>
-      </SettingsRow>
-      <SettingsRow title="Account email verification" description="ondrej@oceanmata.com is verified.">
-        <Button variant="ghost" size="sm" icon="mail">
-          Resend verification email
-        </Button>
+      <SettingsRow
+        title="API keys & sessions"
+        description="Manage API keys and active sessions under the API keys tab."
+      >
+        <Badge tone="outline">Open the API keys tab</Badge>
       </SettingsRow>
     </Card>
   );
@@ -1723,84 +1606,13 @@ function SettingsSecurity() {
 
 function SettingsBilling() {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)", gap: 16 }}>
-      <Card>
-        <CardHeader title="Current plan" sub="Team · billed monthly" />
-        <div style={{ padding: "16px 18px 18px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <span style={{ fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em" }}>€199</span>
-            <span style={{ color: "var(--text-muted)", fontSize: 12.5 }}>/month · renews June 7, 2026</span>
-          </div>
-          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-            <BillingStat label="Records" used={12408} cap={25000} />
-            <BillingStat label="Recipes" used={9} cap={50} />
-            <BillingStat label="Seats" used={4} cap={5} />
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
-            <Button variant="primary">Upgrade plan</Button>
-            <Button variant="ghost">Manage billing portal</Button>
-          </div>
-        </div>
-      </Card>
-      <Card>
-        <CardHeader title="Payment method" sub="Default card on file" />
-        <div style={{ padding: "16px 18px" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 12px",
-              border: "1px solid var(--border)",
-              borderRadius: 10
-            }}
-          >
-            <Icon name="card" size={18} style={{ color: "var(--text-secondary)" }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 550 }}>Visa ending 4242</div>
-              <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>Expires 09/2027</div>
-            </div>
-            <Button variant="ghost" size="sm">
-              Update
-            </Button>
-          </div>
-          <div style={{ marginTop: 14, fontSize: 12.5, color: "var(--text-secondary)" }}>
-            Invoices are sent to{" "}
-            <span style={{ color: "var(--text-primary)", fontWeight: 550 }}>billing@oceanmata.com</span>.
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function BillingStat({ label, used, cap }: { label: string; used: number; cap: number }) {
-  const pct = Math.min(100, (used / cap) * 100);
-  return (
-    <div>
-      <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>
-        {fmtInt(used)}{" "}
-        <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>/ {fmtInt(cap)}</span>
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          height: 4,
-          borderRadius: 999,
-          background: "var(--surface-sunken)",
-          overflow: "hidden"
-        }}
-      >
-        <div
-          style={{
-            width: `${pct}%`,
-            height: "100%",
-            background: pct > 80 ? "var(--warning)" : "var(--accent)"
-          }}
-        />
-      </div>
-    </div>
+    <Card>
+      <EmptyState
+        icon="card"
+        title="Billing — not yet implemented"
+        description="Plan, usage, and payment management ship once the billing service is wired up."
+      />
+    </Card>
   );
 }
 
@@ -1871,31 +1683,6 @@ function mergeRecipes(real: Recipe[]): Array<DemoRecipe & { realId?: string }> {
   return DEMO_RECIPES;
 }
 
-function mergeRuns(
-  real: ExtractionRun[],
-  recipes: Recipe[]
-): Array<DemoRun & { real?: ExtractionRun }> {
-  const realMapped: Array<DemoRun & { real: ExtractionRun }> = real.map((run) => {
-    const recipe = recipes.find((r) => r.id === run.recipeId);
-    return {
-      id: run.id.slice(0, 8),
-      real: run,
-      recipe: run.recipeId,
-      recipeName: recipe?.name ?? run.recipeId.slice(0, 8),
-      host: detectHost(run.url) ?? "ycombinator",
-      started: run.startedAt ? new Date(run.startedAt).getTime() : Date.now(),
-      duration: durationSeconds(run.startedAt, run.finishedAt),
-      records: run.records.length,
-      changes: runChangeCount(run),
-      status: (run.status as DemoRun["status"]) ?? "completed"
-    };
-  });
-  if (realMapped.length > 0) {
-    return realMapped;
-  }
-  return DEMO_RUNS;
-}
-
 function detectHost(urlString: string): keyof typeof HOSTS | undefined {
   try {
     const host = new URL(urlString).hostname.replace(/^www\./, "");
@@ -1906,15 +1693,6 @@ function detectHost(urlString: string): keyof typeof HOSTS | undefined {
     /* ignore */
   }
   return undefined;
-}
-
-function durationSeconds(start: string | null | undefined, end: string | null | undefined) {
-  if (!start || !end) return 0;
-  return Math.max(0, (new Date(end).getTime() - new Date(start).getTime()) / 1000);
-}
-
-function runChangeCount(run: ExtractionRun) {
-  return run.changes.new.length + run.changes.changed.length + run.changes.removed.length;
 }
 
 // Re-export empty-state placeholder for back-compat

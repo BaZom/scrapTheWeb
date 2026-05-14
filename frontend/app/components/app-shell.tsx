@@ -9,7 +9,7 @@ import {
   navItems,
   pageCopy
 } from "../data/product-ui";
-import { Avatar, Button, Card, cx, focusRing } from "./ui";
+import { Avatar, Button, cx, focusRing } from "./ui";
 
 export function AppShell({
   activeView,
@@ -29,17 +29,17 @@ export function AppShell({
   onViewChange: (view: AppView) => void;
 }) {
   const copy = pageCopy[activeView];
-  const userEmail = dashboard?.user.email ?? "ondrej@oceanmata.com";
-  const workspaceName = dashboard?.organizations[0]?.name ?? "Ocean Mata";
-  const seats = dashboard?.organizations.length ?? 1;
+  const userEmail = dashboard?.user.email ?? "";
+  const workspaceName = dashboard?.organizations[0]?.name ?? "Workspace";
+  const role = dashboard?.organizations[0]?.role ?? "Member";
   const workspaceInitials =
     workspaceName
       .split(/\s+/)
       .slice(0, 2)
       .map((p) => p[0] ?? "")
       .join("")
-      .toUpperCase() || "OM";
-  const userDisplayName = userEmail.split("@")[0]?.replace(/[._-]/g, " ") ?? userEmail;
+      .toUpperCase() || "W";
+  const userDisplayName = userEmail.split("@")[0]?.replace(/[._-]/g, " ") || "Account";
   const fullBleed = activeView === "builder";
 
   return (
@@ -64,7 +64,7 @@ export function AppShell({
           <div className="ws-avatar">{workspaceInitials}</div>
           <div className="ws-info">
             <div className="ws-name">{workspaceName}</div>
-            <div className="ws-plan">Team · {seats} seat{seats === 1 ? "" : "s"}</div>
+            <div className="ws-plan">{role}</div>
           </div>
           <Icon name="chevronUpDown" size={13} />
         </button>
@@ -85,37 +85,6 @@ export function AppShell({
         </nav>
 
         <div className="spacer" />
-
-        <Card
-          className=""
-          style={{
-            padding: 12,
-            margin: "0 4px 8px",
-            background: "linear-gradient(180deg, var(--accent-softer) 0%, var(--surface) 75%)",
-            border: "1px solid var(--accent-soft)"
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <Icon name="bolt" size={14} style={{ color: "var(--accent-deep)" }} />
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>Quota</div>
-            <span className="badge badge-outline" style={{ marginLeft: "auto", fontSize: 10 }}>
-              Team
-            </span>
-          </div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-            <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>12,408</span> of 25,000 records this month
-          </div>
-          <div style={{ height: 5, borderRadius: 999, background: "var(--surface-sunken)", overflow: "hidden" }}>
-            <div
-              style={{
-                width: "49%",
-                height: "100%",
-                background: "linear-gradient(90deg, var(--accent), var(--accent-strong))",
-                borderRadius: 999
-              }}
-            />
-          </div>
-        </Card>
 
         <div className="sidebar-foot">
           {navBottom.map((item) => (

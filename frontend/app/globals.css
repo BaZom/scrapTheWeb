@@ -28,13 +28,13 @@
   --text-faint: #B5BBC6;
   --text-onAccent: #FFFFFF;
 
-  /* Accents (default violet-indigo) */
-  --accent: #5B5BD6;
-  --accent-strong: #4A48C7;
-  --accent-deep: #3B3AAE;
-  --accent-soft: #EDEDFB;
-  --accent-softer: #F5F5FE;
-  --accent-ring: rgba(91, 91, 214, 0.22);
+  /* Accents (teal) */
+  --accent: #0EA5A0;
+  --accent-strong: #0B8C88;
+  --accent-deep: #076E6B;
+  --accent-soft: #DCF6F4;
+  --accent-softer: #EEFAF9;
+  --accent-ring: rgba(14, 165, 160, 0.22);
 
   /* Status */
   --success: #0E9F6E;

@@ -561,7 +561,18 @@ export default function Home() {
           runs={runs}
         />
       ) : null}
-      {activeView === "settings" ? <SettingsView /> : null}
+      {activeView === "settings" ? (
+        <SettingsView
+          dashboard={dashboard}
+          accessToken={session.access_token}
+          onVerified={() =>
+            setDashboard((current) =>
+              current ? { ...current, user: { ...current.user, email_verified: true } } : current
+            )
+          }
+          onSessionRevoked={() => void handleLogout()}
+        />
+      ) : null}
       {activeView === "profile" && session ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <AccountPanel
