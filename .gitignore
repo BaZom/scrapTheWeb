@@ -42,6 +42,9 @@ coverage/
 playwright-report/
 test-results/
 
+# Local scratch / throwaway diagnostics (never committed)
+scratch/
+
 # Logs
 logs/
 *.log
