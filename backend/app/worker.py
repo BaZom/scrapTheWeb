@@ -34,7 +34,9 @@ from app.resources import ensure_bucket, make_engine, make_redis, make_s3_client
 logger = structlog.get_logger(__name__)
 
 HEARTBEAT_PATH = Path("/tmp/scraptheweb-worker-alive")
-MAX_DOM_NODES = 500
+# Headroom so a one-item page keeps the whole item (main fields + details), not just the
+# first screenful of elements. Overlays are hover-only, so more nodes add no UI clutter.
+MAX_DOM_NODES = 900
 
 # Browser-side render scripts live as standalone .js files under render_scripts/ so
 # they are not subject to Python line-length and are easy to edit/lint as JS.

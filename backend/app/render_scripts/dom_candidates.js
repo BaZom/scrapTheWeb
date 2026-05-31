@@ -29,7 +29,8 @@
     const attrs = {};
     for (const attr of element.attributes) {
       if (attr.name === "id" || attr.name === "class" || attr.name === "role" ||
-          attr.name === "itemprop" || attr.name.startsWith("data-")) {
+          attr.name === "itemprop" || attr.name === "href" || attr.name === "src" ||
+          attr.name.startsWith("data-")) {
         attrs[attr.name] = attr.value.slice(0, 160);
       }
     }
@@ -144,26 +145,36 @@
     if (candidates.length >= CAND_CAP) break;
   }
 
-  // ---- candidate-aware truncation: keep the listing subtree, then fill the rest ----
+  // ---- truncation ----
+  // Only a STRONG repeated candidate (score >= 40, mirrors the frontend list/single
+  // decision) warrants prioritizing the listing subtree — cards can be deep in the page.
+  // On a single/unstructured page (incidental repeats only) that prioritization would
+  // spend the budget on spec lists / galleries and crowd out the item's MAIN content
+  // (title, price near the top), so we keep plain document order instead — that is what
+  // makes "anything related to the item" selectable on a one-item page.
   const keep = new Set();
-  const addAncestors = (idx) => {
-    let el = all[idx].parentElement;
-    while (el) {
-      const i = indexOf.get(el);
-      if (i !== undefined && nodeByIndex.has(i) && keep.size < maxNodes) keep.add(i);
-      el = el.parentElement;
-    }
-  };
-  const candIdx = candidates.map((c) => parseInt(c.nodeId.slice(5), 10));
-  for (const idx of candIdx) { if (keep.size >= maxNodes) break; keep.add(idx); addAncestors(idx); }
-  for (const idx of candIdx) {
-    if (keep.size >= maxNodes) break;
-    for (const desc of all[idx].querySelectorAll("*")) {
+  const hasStrongCandidate = scored.some((g) => g.score >= 40);
+  if (hasStrongCandidate) {
+    const addAncestors = (idx) => {
+      let el = all[idx].parentElement;
+      while (el) {
+        const i = indexOf.get(el);
+        if (i !== undefined && nodeByIndex.has(i) && keep.size < maxNodes) keep.add(i);
+        el = el.parentElement;
+      }
+    };
+    const candIdx = candidates.map((c) => parseInt(c.nodeId.slice(5), 10));
+    for (const idx of candIdx) { if (keep.size >= maxNodes) break; keep.add(idx); addAncestors(idx); }
+    for (const idx of candIdx) {
       if (keep.size >= maxNodes) break;
-      const i = indexOf.get(desc);
-      if (i !== undefined && nodeByIndex.has(i)) keep.add(i);
+      for (const desc of all[idx].querySelectorAll("*")) {
+        if (keep.size >= maxNodes) break;
+        const i = indexOf.get(desc);
+        if (i !== undefined && nodeByIndex.has(i)) keep.add(i);
+      }
     }
   }
+  // Fill the remaining budget in document order (the entire keep set on single pages).
   for (const idx of visibleIdx) { if (keep.size >= maxNodes) break; keep.add(idx); }
 
   const keptSorted = Array.from(keep).sort((a, b) => a - b);

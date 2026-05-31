@@ -71,7 +71,15 @@ async def _install_overlay_handlers(page: Any, dismissed: list[dict[str, str]]) 
         try:
             trigger = page.get_by_text(pattern).first
 
-            async def handler(pattern: re.Pattern[str] = pattern, name: str = name) -> None:
+            # Playwright (>=1.42) invokes the handler with the triggering Locator as the
+            # first positional arg. Absorb it in `_triggered` so it doesn't clobber the
+            # `pattern` closure default (which previously turned pattern into a Locator and
+            # raised "'Locator' object has no attribute 'replace'").
+            async def handler(
+                _triggered: Any = None,
+                pattern: re.Pattern[str] = pattern,
+                name: str = name,
+            ) -> None:
                 for frame in page.frames:
                     if await _dismiss_pattern(frame, name, pattern, dismissed):
                         return
