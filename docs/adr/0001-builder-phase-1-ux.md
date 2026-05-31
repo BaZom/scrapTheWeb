@@ -106,8 +106,8 @@ hover/click, so we keep them but make the non-active ones visually empty.
 - **Hit testing** and z-ordering of absolutely-positioned elements.
 - **Pointer events** (`onMouseEnter`/`onMouseLeave`) vs. tracking `mousemove`.
 - **Perceptual load / signal-to-noise** in visual UI.
-- The existing **220-node cap** (`overlayNodes` slices to 220 largest) — a silent
-  truncation worth knowing about; large pages drop small nodes.
+- The **overlay cap**: container mode still slices to the 220 largest boxes, but field
+  mode is uncapped so small details (price, mileage) stay selectable — see ADR 0006 §2.
 
 ---
 

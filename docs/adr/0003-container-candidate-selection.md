@@ -65,10 +65,15 @@ spans marketplaces rather than encoding one.
 
 ### Candidate-aware truncation (the subtle part)
 
-`domNodes` is still capped at `MAX_DOM_NODES` (500) — we did **not** raise it. Instead,
-truncation now *prioritizes the listing subtree*: it keeps candidate nodes, their
-ancestors, and their descendants first, then fills the remainder in document order.
-This guarantees two invariants the rest of the flow depends on:
+> **Updated by ADR 0006:** this candidate-priority truncation now runs **only when a
+> strong candidate is present (score ≥ 40 → a list page)**. On single/unstructured
+> pages it would crowd out the item's main content, so those keep plain document order.
+> `MAX_DOM_NODES` was also raised 500 → 900 for headroom.
+
+When a strong candidate is present, truncation *prioritizes the listing subtree*: it
+keeps candidate nodes, their ancestors, and their descendants first, then fills the
+remainder in document order. This guarantees two invariants the rest of the flow
+depends on:
 
 - A selected candidate's `nodeId` exists in `domNodes` → the existing
   `/selector` endpoint works unchanged (no selector-generation change was needed).
