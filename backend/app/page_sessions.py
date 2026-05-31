@@ -53,6 +53,44 @@ class DomNode(BaseModel):
     height: float
 
 
+class ContainerCandidate(BaseModel):
+    """A scored, repeated listing-card element detected during render.
+
+    Powers Container mode: instead of the largest raw DOM rectangles, the builder
+    offers these semantic candidates. `group` ties together the repeated siblings so
+    the UI can outline the exact matched set; `nodeId` matches an entry in `domNodes`.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    nodeId: str
+    tag: str
+    label: str
+    group: str
+    score: float
+    reason: str
+    matchCount: int
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+class AccessBlock(BaseModel):
+    """Set when the render hit an anti-bot block (e.g. Akamai/Cloudflare 403).
+
+    Lets the builder show a clear "this site blocks automated access" message instead
+    of presenting the block page as if it were the real content.
+    """
+
+    model_config = ConfigDict(strict=True)
+
+    blocked: bool
+    status: int
+    vendor: str
+    reason: str
+
+
 class PageSessionCreateResponse(BaseModel):
     model_config = ConfigDict(strict=True)
 
@@ -61,6 +99,9 @@ class PageSessionCreateResponse(BaseModel):
     domNodes: list[DomNode]
     title: str | None
     jobStatus: str
+    overlayDismissals: list[dict[str, str]] = Field(default_factory=list)
+    containerCandidates: list[ContainerCandidate] = Field(default_factory=list)
+    accessBlock: AccessBlock | None = None
 
 
 class SelectorRequest(BaseModel):
@@ -131,6 +172,12 @@ def _response_from_payload(
         for node in raw_nodes
         if isinstance(node, dict)
     ]
+    raw_candidates = payload.get("containerCandidates", []) if payload else []
+    container_candidates = [
+        ContainerCandidate.model_validate(_normalize_candidate(candidate))
+        for candidate in raw_candidates
+        if isinstance(candidate, dict)
+    ]
     screenshot_url = (
         str(request.url_for("page_session_screenshot", session_id=page_session.id))
         if page_session.screenshot_key
@@ -142,6 +189,24 @@ def _response_from_payload(
         domNodes=dom_nodes,
         title=metadata.get("title") if isinstance(metadata.get("title"), str) else None,
         jobStatus=page_session.status,
+        overlayDismissals=[
+            {str(key): str(value) for key, value in item.items()}
+            for item in metadata.get("overlayDismissals", [])
+            if isinstance(item, dict)
+        ],
+        containerCandidates=container_candidates,
+        accessBlock=(
+            AccessBlock.model_validate(
+                {
+                    "blocked": bool(access_block.get("blocked")),
+                    "status": int(access_block.get("status") or 0),
+                    "vendor": str(access_block.get("vendor") or "unknown"),
+                    "reason": str(access_block.get("reason") or ""),
+                }
+            )
+            if isinstance(access_block := metadata.get("accessBlock"), dict)
+            else None
+        ),
     )
 
 
@@ -155,6 +220,17 @@ def _normalize_dom_node(node: dict[str, Any]) -> dict[str, Any]:
         normalized["parentNodeId"] if isinstance(normalized.get("parentNodeId"), str) else None
     )
     normalized["nthOfType"] = int(normalized.get("nthOfType") or 1)
+    for key in ("x", "y", "width", "height"):
+        normalized[key] = float(normalized.get(key, 0))
+    return normalized
+
+
+def _normalize_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(candidate)
+    for key in ("nodeId", "tag", "label", "group", "reason"):
+        normalized[key] = str(normalized.get(key, ""))
+    normalized["score"] = float(normalized.get("score", 0))
+    normalized["matchCount"] = int(normalized.get("matchCount") or 0)
     for key in ("x", "y", "width", "height"):
         normalized[key] = float(normalized.get(key, 0))
     return normalized
