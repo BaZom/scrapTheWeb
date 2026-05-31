@@ -4,10 +4,11 @@ ScrapTheWeb is a multi-tenant web app for building and running visual
 extraction recipes against public listing pages. The core product loop is:
 
 1. Render a public URL with Playwright.
-2. Store the screenshot and rendered HTML.
-3. Let the user select a repeated container and label fields.
-4. Generate selectors and preview extracted rows.
-5. Save the recipe, run it on demand, persist records, compute changes, and
+2. Reduce common blocking overlays before capture.
+3. Store the screenshot and rendered HTML.
+4. Let the user select a repeated container and label fields.
+5. Generate selectors and preview extracted rows.
+6. Save the recipe, run it on demand, persist records, compute changes, and
    export CSV or JSON.
 
 ## System Components
@@ -59,7 +60,8 @@ Main persisted entities:
   revocation state.
 - `page_sessions`: rendered URL, status, screenshot key, HTML key, and DOM
   cache identity.
-- `websites`, `recipes`, and `recipe_versions`: saved extraction definitions.
+- `websites`, `recipes`, and `recipe_versions`: saved extraction definitions,
+  including selectors, fields, pagination, and deduplication settings.
 - `extraction_runs`, `extracted_records`, and `change_events`: run history and
   diff output.
 - `usage_counters`: monthly quota accounting per organization and metric.
@@ -74,18 +76,38 @@ an organization require membership checks.
 1. The frontend submits a URL to the API.
 2. The API validates rate limits, monthly quota, and SSRF rules.
 3. A render job is enqueued in Redis.
-4. The worker renders the URL with Playwright, stores screenshot and HTML in
-   S3-compatible storage, extracts a DOM summary, and updates the page session.
-5. The frontend displays the screenshot and DOM overlays so the user can choose
-   a repeated container and fields.
+4. The worker renders the URL with Playwright, tries to reduce common blocking
+   overlays, stores screenshot and HTML in S3-compatible storage, extracts a DOM
+   summary, and updates the page session.
+5. The frontend displays the frozen screenshot and DOM overlays so the user can
+   choose a repeated container and map fields.
+
+### Overlay Reduction
+
+The builder uses a frozen screenshot plus DOM overlay picker, not a live embedded
+website. Before the screenshot is captured, Playwright runs a short backend-only
+overlay-reduction pass. It looks for common non-invasive dismissal controls such
+as reject, necessary-only, close, later, skip, and "no thanks" buttons or links
+across the page and its frames. It also sends `Escape` when a modal dialog remains.
+
+This pass does not store cookies or localStorage, does not accept all cookies by
+default, and does not add user-authored setup steps to recipes. Recipe runs use
+the same Playwright rendering path, so the preview and run paths both benefit
+from the same automatic overlay reduction.
+
+The page-session response includes `overlayDismissals` metadata when Playwright
+dismissed something. The frontend uses that only as a small status badge; the
+user's main workflow remains selecting containers and fields on the resulting
+snapshot.
 
 ### Preview, Save, Run, Export
 
 1. The user maps fields to selectors and requests a preview.
 2. The API extracts rows from the cached/rendered HTML and returns preview data.
 3. Saving creates a recipe and recipe version.
-4. Running a recipe enqueues a worker job, persists extracted records, and
-   computes new/changed/removed records against the previous run.
+4. Running a recipe enqueues a worker job, renders with the same overlay-reduction
+   path, persists extracted records, and computes new/changed/removed records
+   against the previous run.
 5. CSV and JSON exports are streamed from persisted run records.
 
 ## Auth Surface
