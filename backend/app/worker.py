@@ -364,7 +364,10 @@ async def _render_with_playwright(
                 url, wait_until="domcontentloaded", timeout=navigation_timeout_ms
             )
             try:
-                await page.wait_for_load_state("networkidle", timeout=3000)
+                # Brief, best-effort settle for late content. Ad/tracking-heavy SPAs never
+                # go network-idle, so this would otherwise burn the full timeout every time
+                # — keep it short (the DOM is already present after domcontentloaded).
+                await page.wait_for_load_state("networkidle", timeout=1000)
             except Exception:
                 pass
             overlay_dismissals = await reduce_blocking_overlays(page)

@@ -71,8 +71,25 @@ SPAs (autoscout24), so the render timed out and the whole job failed — nothing
 the bucket.
 
 **Fix.** Navigate with `wait_until="domcontentloaded"` plus a **bounded** best-effort
-`networkidle` settle (3s) that proceeds regardless. Candidate extraction is also wrapped
-so a JS hiccup can't discard an already-captured screenshot.
+`networkidle` settle (1s — see §6) that proceeds regardless. Candidate extraction is also
+wrapped so a JS hiccup can't discard an already-captured screenshot.
+
+## 6. Render performance (the waits were the cost)
+
+**Problem.** A measured render of the autoscout search page took **~9.4s**, almost all of
+it in two idle waits: the `networkidle` settle burned the full **3s** (the page never goes
+idle), and `overlay_reduction` spent **~4.5s** looping 3× with 400–500ms waits, 1200ms
+click timeouts, and `Escape` re-triggering the loop on lingering modals.
+
+**Fix (behaviour preserved, just stop idling):**
+- `networkidle` settle 3s → **1s** (the DOM is already present after `domcontentloaded`).
+- `overlay_reduction`: initial wait 400→250ms, loop 3→2 passes, per-pass waits 500/400→
+  250ms, click timeout 1200→800ms, and a single `Escape` that no longer keeps the loop
+  alive once the banner is gone.
+
+**Result:** ~9.4s → **~3.7s** on the same page, with consent still dismissed. Remaining
+time is real work (navigation, screenshot, DOM extraction). Reusing one browser across
+renders (instead of launching per render) is a further win, left for later.
 
 ## Concepts to look up
 - **Budgeted DOM serialization** — why *which* nodes you keep matters more than how many,

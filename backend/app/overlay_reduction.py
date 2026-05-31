@@ -40,29 +40,30 @@ ACCEPT_FALLBACK = re.compile(
 
 
 async def reduce_blocking_overlays(page: Any) -> list[dict[str, str]]:
+    # Kept fast: this runs on every render. Short settle + at most 2 passes with brief
+    # waits. Once a banner is dismissed we stop chasing lingering modals (Escape no
+    # longer keeps the loop alive), which previously made this the slowest render phase.
     dismissed: list[dict[str, str]] = []
     await _install_overlay_handlers(page, dismissed)
-    await page.wait_for_timeout(400)
+    await page.wait_for_timeout(250)
 
-    for _ in range(3):
+    for _ in range(2):
         previous_count = len(dismissed)
         for frame in page.frames:
             await _dismiss_in_frame(frame, dismissed)
         if len(dismissed) != previous_count:
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(250)
             continue
         # No reject/necessary/close button this pass. Try accept-all (last resort),
-        # then Escape; if neither makes progress, the overlay isn't dismissable here.
+        # then a single Escape; then stop — the overlay is either gone or not dismissable.
         progressed = False
         for frame in page.frames:
             if await _dismiss_pattern(frame, "accept_all", ACCEPT_FALLBACK, dismissed):
                 progressed = True
                 break
         if not progressed:
-            progressed = await _escape_modal(page, dismissed)
-        if not progressed:
-            break
-        await page.wait_for_timeout(400)
+            await _escape_modal(page, dismissed)
+        break
     return dismissed
 
 
@@ -119,7 +120,7 @@ async def _dismiss_pattern(
             continue
         for index in range(count):
             try:
-                await locator.nth(index).click(timeout=1200)
+                await locator.nth(index).click(timeout=800)
                 dismissed.append({"strategy": name, "text": pattern.pattern[:80]})
                 return True
             except Exception:
