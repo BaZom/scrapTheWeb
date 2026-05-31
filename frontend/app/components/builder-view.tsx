@@ -3,6 +3,9 @@
 import { type FormEvent, useMemo, useState } from "react";
 
 import type {
+  AccessBlock,
+  ChangeEvent,
+  ContainerCandidate,
   DomNode,
   ExtractType,
   ExtractionRun,
@@ -27,7 +30,8 @@ import {
   fmtDuration
 } from "./ui";
 
-const STEPS = ["Load URL", "Select container", "Map fields", "Preview records", "Save & run"];
+const LIST_STEPS = ["Load page", "Pick an item", "Choose details", "Preview", "Save & run"];
+const SINGLE_STEPS = ["Load page", "Choose details", "Preview", "Save & run"];
 
 const TYPE_COLORS: Record<ExtractType, { bg: string; fg: string }> = {
   text: { bg: "var(--accent-soft)", fg: "var(--accent-deep)" },
@@ -46,6 +50,7 @@ export type BuilderProps = {
   selectedNode: DomNode | null;
   selectorResult: SelectorResult | null;
   selectorBusy: boolean;
+  recipeShape: "list" | "single";
   pickMode: "container" | "field";
   onPickModeChange: (mode: "container" | "field") => void;
   pickerView: "overlays" | "nodes";
@@ -61,6 +66,10 @@ export type BuilderProps = {
   fields: PreviewField[];
   onFieldsChange: (fields: PreviewField[]) => void;
   onAddField: () => void;
+  fieldSample: string | null;
+  fieldSampleBusy: boolean;
+  fieldSamples: Record<string, string>;
+  onStepNavigate: (target: number) => void;
   preview: PreviewResult | null;
   previewBusy: boolean;
   onRunPreview: () => void;
@@ -83,6 +92,13 @@ export type BuilderProps = {
 };
 
 function currentStep(props: BuilderProps) {
+  // Single-record pages have no "pick an item" step (the whole page is the record).
+  if (props.recipeShape === "single") {
+    if (props.savedRecipe) return 3;
+    if (props.preview) return 2;
+    if (props.fields.length > 0) return 1;
+    return 0;
+  }
   if (props.savedRecipe) return 4;
   if (props.preview) return 3;
   if (props.fields.length > 0) return 2;
@@ -114,6 +130,60 @@ function formatValue(value: unknown) {
 
 export function BuilderView(props: BuilderProps) {
   const [bottomTab, setBottomTab] = useState<"preview" | "changes" | "logs">("preview");
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  // Client-side approximation of which nodes the container selector matches, so we can
+  // outline the whole repeated set on the screenshot. We match by tag + class signature,
+  // which mirrors how the listing selector is generated. The authoritative count still
+  // comes from the backend's `selectorResult.matchCount`; this is purely a visual aid.
+  // (Proper fix: have the selector endpoint return the matched nodeIds.)
+  const matchedNodeIds = useMemo(() => {
+    if (!props.selectedNode || !props.pageSession) return new Set<string>();
+    const sig = (n: DomNode) => `${n.tag}|${[...n.classes].sort().join(".")}`;
+    const target = sig(props.selectedNode);
+    return new Set(props.pageSession.domNodes.filter((n) => sig(n) === target).map((n) => n.nodeId));
+  }, [props.selectedNode, props.pageSession]);
+
+  // Semantic listing-card candidates from the backend (Container mode's primary layer).
+  const candidates = useMemo(
+    () => props.pageSession?.containerCandidates ?? [],
+    [props.pageSession]
+  );
+  const domNodeById = useMemo(
+    () => new Map((props.pageSession?.domNodes ?? []).map((n) => [n.nodeId, n] as const)),
+    [props.pageSession]
+  );
+  const showCandidates = props.pickMode === "container" && candidates.length > 0;
+
+  // The repeated group the current container belongs to — lets us outline the EXACT
+  // matched cards (preferred over the tag/class approximation in `matchedNodeIds`).
+  const selectedGroup = useMemo(() => {
+    if (!props.selectedNode) return null;
+    return candidates.find((c) => c.nodeId === props.selectedNode!.nodeId)?.group ?? null;
+  }, [props.selectedNode, candidates]);
+  const groupMembers = useMemo(
+    () => (selectedGroup ? candidates.filter((c) => c.group === selectedGroup) : []),
+    [selectedGroup, candidates]
+  );
+
+  // Selecting a candidate needs a DomNode for selector generation; prefer the real
+  // node (so Field mode can find descendants), fall back to a synthetic one.
+  function selectCandidate(c: ContainerCandidate) {
+    const node = domNodeById.get(c.nodeId) ?? {
+      nodeId: c.nodeId,
+      tag: c.tag,
+      text: "",
+      attrs: {},
+      classes: [],
+      parentNodeId: null,
+      nthOfType: 1,
+      x: c.x,
+      y: c.y,
+      width: c.width,
+      height: c.height
+    };
+    props.onNodeSelect(node);
+  }
 
   const overlayNodes = useMemo(() => {
     const all =
@@ -136,6 +206,7 @@ export function BuilderView(props: BuilderProps) {
   }, [props.pageSession, props.selectedNode]);
 
   const step = currentStep(props);
+  const STEPS = props.recipeShape === "single" ? SINGLE_STEPS : LIST_STEPS;
   const previewRows = props.preview?.rows ?? [];
 
   return (
@@ -179,12 +250,9 @@ export function BuilderView(props: BuilderProps) {
         </Badge>
 
         <div style={{ flex: 1, display: "flex", justifyContent: "center", minWidth: 0 }}>
-          <Stepper steps={STEPS} current={step} compact />
+          <Stepper steps={STEPS} current={step} compact onStepClick={props.onStepNavigate} />
         </div>
 
-        <Button variant="ghost" size="sm" icon="eye" disabled={!props.preview} onClick={props.onRunPreview}>
-          Preview
-        </Button>
         <Button
           variant="secondary"
           size="sm"
@@ -257,25 +325,37 @@ export function BuilderView(props: BuilderProps) {
 
         <div style={{ flex: 1 }} />
 
-        <Segmented<"overlays" | "nodes">
-          value={props.pickerView}
-          onChange={props.onPickerViewChange}
-          options={[
-            { value: "overlays", icon: "box", label: "Boxes" },
-            { value: "nodes", icon: "treeNode", label: "Nodes" }
-          ]}
-        />
-        <Segmented<"container" | "field">
-          value={props.pickMode}
-          onChange={(v) => props.onPickModeChange(v)}
-          options={[
-            { value: "container", icon: "layers", label: "Container" },
-            { value: "field", icon: "cursor", label: "Field" }
-          ]}
-        />
-        {props.selectorResult ? (
+        {props.recipeShape !== "single" ? (
+          <Segmented<"container" | "field">
+            value={props.pickMode}
+            onChange={(v) => props.onPickModeChange(v)}
+            options={[
+              { value: "container", icon: "layers", label: "Item" },
+              { value: "field", icon: "cursor", label: "Details" }
+            ]}
+          />
+        ) : null}
+        {/* DOM-tree view is a power-user fallback, tucked behind "Advanced". */}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="treeNode"
+          onClick={() => props.onPickerViewChange(props.pickerView === "nodes" ? "overlays" : "nodes")}
+        >
+          {props.pickerView === "nodes" ? "Visual" : "Advanced"}
+        </Button>
+        {props.selectorResult && props.recipeShape !== "single" ? (
           <span className="badge badge-success" style={{ height: 26, padding: "0 10px" }}>
             <span className="dot" /> {props.selectorResult.matchCount} matches
+          </span>
+        ) : null}
+        {props.pageSession?.overlayDismissals.length ? (
+          <span
+            className="badge badge-info"
+            style={{ height: 26, padding: "0 10px" }}
+            title="Playwright dismissed a blocking popup before capture"
+          >
+            <span className="dot" /> Popup dismissed
           </span>
         ) : null}
       </div>
@@ -318,6 +398,9 @@ export function BuilderView(props: BuilderProps) {
             position: "relative"
           }}
         >
+          {props.pageSession?.accessBlock?.blocked ? (
+            <AccessBlockNotice block={props.pageSession.accessBlock} url={props.url} />
+          ) : null}
           {props.pageSession ? (
             props.screenshotObjectUrl ? (
               props.pickerView === "overlays" ? (
@@ -387,16 +470,39 @@ export function BuilderView(props: BuilderProps) {
                           })
                         }
                       />
-                      {props.imageSize
+                      {props.imageSize && !showCandidates
                         ? overlayNodes.map((node) => {
                             const selected =
                               props.selectedNode?.nodeId === node.nodeId ||
                               props.fieldNode?.nodeId === node.nodeId;
+                            const hovered = hoveredNodeId === node.nodeId;
+                            // In container mode, persistently outline the whole repeated set
+                            // so the user can confirm the selection grabbed every card.
+                            const matched = props.pickMode === "container" && matchedNodeIds.has(node.nodeId);
+
+                            // Devtools-style: boxes are invisible until hovered. Selected and
+                            // matched nodes stay visible so the current state is always readable.
+                            let background = "transparent";
+                            let border = "1.4px solid transparent";
+                            if (selected) {
+                              background = "rgba(91,91,214,0.30)";
+                              border = "1.4px solid var(--accent)";
+                            } else if (hovered) {
+                              background = "rgba(37,99,235,0.16)";
+                              border = "1.6px solid var(--info)";
+                            } else if (matched) {
+                              border = "1.4px dashed var(--success)";
+                            }
+
                             return (
                               <button
                                 type="button"
                                 key={node.nodeId}
                                 aria-label={`Select ${nodeLabel(node)}`}
+                                onMouseEnter={() => setHoveredNodeId(node.nodeId)}
+                                onMouseLeave={() =>
+                                  setHoveredNodeId((current) => (current === node.nodeId ? null : current))
+                                }
                                 onClick={() =>
                                   props.pickMode === "field"
                                     ? props.onFieldNodeSelect(node)
@@ -409,15 +515,132 @@ export function BuilderView(props: BuilderProps) {
                                   top: `${(node.y / props.imageSize!.height) * 100}%`,
                                   width: `${(node.width / props.imageSize!.width) * 100}%`,
                                   height: `${(node.height / props.imageSize!.height) * 100}%`,
-                                  background: selected ? "rgba(91,91,214,0.30)" : "rgba(37,99,235,0.10)",
-                                  border: `1.4px solid ${selected ? "var(--accent)" : "var(--info)"}`,
+                                  background,
+                                  border,
                                   borderRadius: 4,
                                   cursor: "pointer",
-                                  padding: 0
+                                  padding: 0,
+                                  transition: "background 80ms ease, border-color 80ms ease"
                                 }}
-                              />
+                              >
+                                {hovered && !selected ? (
+                                  <span
+                                    style={{
+                                      position: "absolute",
+                                      top: -20,
+                                      left: -1,
+                                      maxWidth: 240,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                      background: "var(--info)",
+                                      color: "white",
+                                      fontSize: 10.5,
+                                      fontFamily: "var(--font-mono)",
+                                      fontWeight: 600,
+                                      padding: "1px 6px",
+                                      borderRadius: 4,
+                                      pointerEvents: "none"
+                                    }}
+                                  >
+                                    {nodeLabel(node)}
+                                  </span>
+                                ) : null}
+                              </button>
                             );
                           })
+                        : null}
+
+                      {/* Container mode: clickable semantic listing-card candidates */}
+                      {props.imageSize && showCandidates
+                        ? candidates.map((c) => {
+                            const selected = props.selectedNode?.nodeId === c.nodeId;
+                            const inGroup = selectedGroup !== null && c.group === selectedGroup;
+                            const hovered = hoveredNodeId === c.nodeId;
+                            // Devtools-style: candidates are invisible until hovered, so the
+                            // canvas stays clean. Selection + matched-group outline still show.
+                            let background = "transparent";
+                            let border = "1.4px solid transparent";
+                            if (selected) {
+                              background = "rgba(20,184,166,0.28)";
+                              border = "1.6px solid var(--accent)";
+                            } else if (hovered) {
+                              background = "rgba(20,184,166,0.20)";
+                              border = "1.6px solid var(--accent)";
+                            } else if (inGroup) {
+                              border = "1.4px dashed var(--accent)";
+                            }
+                            return (
+                              <button
+                                type="button"
+                                key={`cand-${c.nodeId}`}
+                                aria-label={`Select listing card ${c.label}`}
+                                onMouseEnter={() => setHoveredNodeId(c.nodeId)}
+                                onMouseLeave={() =>
+                                  setHoveredNodeId((current) => (current === c.nodeId ? null : current))
+                                }
+                                onClick={() => selectCandidate(c)}
+                                title={`${c.label} · score ${Math.round(c.score)} · ${c.reason}`}
+                                style={{
+                                  position: "absolute",
+                                  left: `${(c.x / props.imageSize!.width) * 100}%`,
+                                  top: `${(c.y / props.imageSize!.height) * 100}%`,
+                                  width: `${(c.width / props.imageSize!.width) * 100}%`,
+                                  height: `${(c.height / props.imageSize!.height) * 100}%`,
+                                  background,
+                                  border,
+                                  borderRadius: 6,
+                                  cursor: "pointer",
+                                  padding: 0,
+                                  transition: "background 80ms ease, border-color 80ms ease"
+                                }}
+                              >
+                                {hovered && !selected ? (
+                                  <span
+                                    style={{
+                                      position: "absolute",
+                                      top: -20,
+                                      left: -1,
+                                      maxWidth: 260,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                      background: "var(--accent)",
+                                      color: "white",
+                                      fontSize: 10.5,
+                                      fontFamily: "var(--font-mono)",
+                                      fontWeight: 600,
+                                      padding: "1px 6px",
+                                      borderRadius: 4,
+                                      pointerEvents: "none"
+                                    }}
+                                  >
+                                    {c.label}
+                                  </span>
+                                ) : null}
+                              </button>
+                            );
+                          })
+                        : null}
+
+                      {/* Persistent exact-match outline for the selected group (e.g. after
+                          auto-switching to Field mode the matched cards stay outlined) */}
+                      {props.imageSize && !showCandidates && groupMembers.length > 0
+                        ? groupMembers.map((c) => (
+                            <div
+                              key={`grp-${c.nodeId}`}
+                              style={{
+                                position: "absolute",
+                                left: `${(c.x / props.imageSize!.width) * 100}%`,
+                                top: `${(c.y / props.imageSize!.height) * 100}%`,
+                                width: `${(c.width / props.imageSize!.width) * 100}%`,
+                                height: `${(c.height / props.imageSize!.height) * 100}%`,
+                                border: "1.4px dashed var(--accent)",
+                                borderRadius: 6,
+                                pointerEvents: "none"
+                              }}
+                            />
+                          ))
                         : null}
 
                       {props.selectorResult ? (
@@ -459,8 +682,27 @@ export function BuilderView(props: BuilderProps) {
                   >
                     <Icon name="info" size={13} style={{ color: "var(--accent-deep)" }} />
                     <span>
-                      Click a card to pick the container, then switch to{" "}
-                      <strong style={{ color: "var(--text-primary)" }}>Field</strong> to map individual values.
+                      {props.recipeShape === "single" ? (
+                        <>
+                          Single page detected — hover any element and click the{" "}
+                          <strong style={{ color: "var(--text-primary)" }}>details to collect</strong> (title,
+                          price, etc.). Use <strong style={{ color: "var(--text-primary)" }}>Advanced</strong> for
+                          manual selection.
+                        </>
+                      ) : showCandidates ? (
+                        <>
+                          Found <strong style={{ color: "var(--text-primary)" }}>{candidates.length}</strong>{" "}
+                          likely items — hover to highlight, click one example, then choose the{" "}
+                          <strong style={{ color: "var(--text-primary)" }}>details</strong> to collect. Use{" "}
+                          <strong style={{ color: "var(--text-primary)" }}>Advanced</strong> for manual selection.
+                        </>
+                      ) : (
+                        <>
+                          Hover any element and click the repeating{" "}
+                          <strong style={{ color: "var(--text-primary)" }}>item</strong> you want, then choose its{" "}
+                          <strong style={{ color: "var(--text-primary)" }}>details</strong>.
+                        </>
+                      )}
                     </span>
                   </div>
                 </div>
@@ -496,7 +738,8 @@ export function BuilderView(props: BuilderProps) {
                         .slice(0, 200)
                         .map((node) => {
                           const active =
-                            props.selectedNode?.nodeId === node.nodeId || props.fieldNode?.nodeId === node.nodeId;
+                            props.selectedNode?.nodeId === node.nodeId ||
+                            props.fieldNode?.nodeId === node.nodeId;
                           return (
                             <button
                               type="button"
@@ -586,53 +829,62 @@ export function BuilderView(props: BuilderProps) {
             overflow: "auto"
           }}
         >
-          <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          {props.recipeShape !== "single" ? (
+            <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
               <div
                 style={{
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em"
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 10
                 }}
               >
-                Repeated container
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: "var(--text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em"
+                  }}
+                >
+                  Item
+                </div>
+                {props.selectorResult ? (
+                  <Badge tone="success" dot>
+                    {props.selectorResult.matchCount} matches
+                  </Badge>
+                ) : (
+                  <Badge tone="outline">No selection</Badge>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <Icon name="layers" size={14} style={{ color: "var(--accent-deep)" }} />
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>
+                  {props.selectedNode ? nodeLabel(props.selectedNode) : "Click an example item in the page"}
+                </span>
               </div>
               {props.selectorResult ? (
-                <Badge tone="success" dot>
-                  {props.selectorResult.matchCount} matches
-                </Badge>
-              ) : (
-                <Badge tone="outline">No selection</Badge>
-              )}
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    background: "var(--surface-soft)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 7,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 12,
+                    color: "var(--text-primary)",
+                    wordBreak: "break-all"
+                  }}
+                >
+                  {props.selectorResult.selector}
+                </div>
+              ) : null}
+              {props.selectorBusy ? (
+                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>Generating selector…</p>
+              ) : null}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <Icon name="layers" size={14} style={{ color: "var(--accent-deep)" }} />
-              <span style={{ fontSize: 13.5, fontWeight: 600 }}>
-                {props.selectedNode ? nodeLabel(props.selectedNode) : "Pick a container in the canvas"}
-              </span>
-            </div>
-            {props.selectorResult ? (
-              <div
-                style={{
-                  padding: "8px 10px",
-                  background: "var(--surface-soft)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 7,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  color: "var(--text-primary)",
-                  wordBreak: "break-all"
-                }}
-              >
-                {props.selectorResult.selector}
-              </div>
-            ) : null}
-            {props.selectorBusy ? (
-              <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>Generating selector…</p>
-            ) : null}
-          </div>
+          ) : null}
 
           <div style={{ padding: "16px 18px", flex: 1 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -645,7 +897,7 @@ export function BuilderView(props: BuilderProps) {
                   letterSpacing: "0.05em"
                 }}
               >
-                Field mapping
+                Details to collect
               </div>
               <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{props.fields.length} fields</span>
             </div>
@@ -724,6 +976,9 @@ export function BuilderView(props: BuilderProps) {
                 >
                   {props.fieldSelector.selector}
                 </div>
+
+                <FieldSample busy={props.fieldSampleBusy} value={props.fieldSample} />
+
                 <Button
                   variant="primary"
                   size="sm"
@@ -784,18 +1039,44 @@ export function BuilderView(props: BuilderProps) {
                   >
                     {f.selector}
                   </div>
+                  {props.fieldSamples[f.name] ? (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        color: "var(--text-secondary)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6
+                      }}
+                    >
+                      <Icon name="arrowRight" size={11} style={{ color: "var(--success-fg)", flexShrink: 0 }} />
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        {props.fieldSamples[f.name]}
+                      </span>
+                    </div>
+                  ) : null}
                 </Card>
               ))}
             </div>
 
-            {props.selectorResult && !props.fieldSelector ? (
+            {props.recipeShape !== "single" &&
+            props.pickMode === "container" &&
+            props.selectorResult &&
+            !props.fieldSelector ? (
               <Button
                 variant="secondary"
                 icon="cursor"
                 style={{ width: "100%", marginTop: 12, borderStyle: "dashed" }}
                 onClick={() => props.onPickModeChange("field")}
               >
-                Pick a field inside container
+                Choose a detail inside the item
               </Button>
             ) : null}
 
@@ -970,21 +1251,7 @@ export function BuilderView(props: BuilderProps) {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {(["new", "changed", "removed"] as const).flatMap((kind) =>
                   props.run!.changes[kind].slice(0, 8).map((event) => (
-                    <div
-                      key={event.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: "8px 12px",
-                        border: "1px solid var(--divider)",
-                        borderRadius: 8,
-                        background: "white"
-                      }}
-                    >
-                      <Badge tone={kind === "new" ? "success" : kind === "changed" ? "warning" : "danger"}>{kind}</Badge>
-                      <span style={{ flex: 1, fontSize: 13, color: "var(--text-primary)" }}>{event.recordKey}</span>
-                    </div>
+                    <ChangeRow key={event.id} kind={kind} event={event} />
                   ))
                 )}
                 {props.run.status === "completed" &&
@@ -1007,22 +1274,22 @@ export function BuilderView(props: BuilderProps) {
                 gap: 4
               }}
             >
-              <LogLine level="info" text={`Run started · recipe ${props.run.recipeId.slice(0, 8)}`} />
-              {props.run.startedAt ? (
-                <LogLine level="info" text={`Started at ${new Date(props.run.startedAt).toLocaleTimeString()}`} />
-              ) : null}
-              <LogLine level="info" text={`${props.run.records.length} record(s) extracted`} />
+              <LogLine at={props.run.startedAt} level="info" text={`Run started · recipe ${props.run.recipeId.slice(0, 8)}`} />
+              <LogLine at={props.run.startedAt} level="info" text={`${props.run.records.length} record(s) extracted`} />
               <LogLine
+                at={props.run.finishedAt}
                 level="info"
                 text={`Diff: +${props.run.changes.new.length} new · ${props.run.changes.changed.length} changed · ${props.run.changes.removed.length} removed`}
               />
-              {props.run.errorMessage ? <LogLine level="error" text={props.run.errorMessage} /> : null}
+              {props.run.errorMessage ? (
+                <LogLine at={props.run.finishedAt} level="error" text={props.run.errorMessage} />
+              ) : null}
               {props.run.status === "completed" ? (
-                <LogLine level="ok" text="Run completed" />
+                <LogLine at={props.run.finishedAt} level="ok" text="Run completed" />
               ) : props.run.status === "failed" ? (
-                <LogLine level="error" text="Run failed" />
+                <LogLine at={props.run.finishedAt} level="error" text="Run failed" />
               ) : (
-                <LogLine level="info" text={`Status: ${props.run.status}`} />
+                <LogLine at={null} level="info" text={`Status: ${props.run.status}`} />
               )}
             </div>
           ) : null}
@@ -1082,7 +1349,16 @@ function ChangeStat({ label, count, color }: { label: string; count: number; col
   );
 }
 
-function LogLine({ level, text }: { level: "info" | "ok" | "warn" | "error"; text: string }) {
+function LogLine({
+  level,
+  text,
+  at
+}: {
+  level: "info" | "ok" | "warn" | "error";
+  text: string;
+  // Real event time from the run; null renders an em dash rather than a fabricated "now".
+  at?: string | null;
+}) {
   const colors: Record<string, { bg: string; fg: string }> = {
     info: { bg: "var(--accent-soft)", fg: "var(--accent-deep)" },
     ok: { bg: "var(--success-bg)", fg: "var(--success-fg)" },
@@ -1091,7 +1367,7 @@ function LogLine({ level, text }: { level: "info" | "ok" | "warn" | "error"; tex
   };
   return (
     <div className={cx("flex")} style={{ display: "flex", gap: 12 }}>
-      <span style={{ color: "var(--text-faint)" }}>{new Date().toLocaleTimeString()}</span>
+      <span style={{ color: "var(--text-faint)" }}>{at ? new Date(at).toLocaleTimeString() : "—"}</span>
       <span
         style={{
           color: colors[level].fg,
@@ -1107,6 +1383,164 @@ function LogLine({ level, text }: { level: "info" | "ok" | "warn" | "error"; tex
         {level}
       </span>
       <span>{text}</span>
+    </div>
+  );
+}
+
+function AccessBlockNotice({ block, url }: { block: AccessBlock; url: string }) {
+  let host = url;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    /* keep raw url */
+  }
+  return (
+    <div style={{ maxWidth: 1180, margin: "0 auto 14px" }}>
+      <Card
+        className="card-pad"
+        style={{ border: "1px solid var(--danger)", background: "var(--danger-bg)" }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <Icon name="shield" size={18} style={{ color: "var(--danger-fg)", flexShrink: 0, marginTop: 1 }} />
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                color: "var(--danger-fg)"
+              }}
+            >
+              This site blocks automated access
+              <Badge tone="danger">HTTP {block.status}</Badge>
+              {block.vendor && block.vendor !== "unknown" ? (
+                <Badge tone="outline">{block.vendor}</Badge>
+              ) : null}
+            </div>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              <strong style={{ color: "var(--text-primary)" }}>{host}</strong> served a bot-protection
+              page instead of its content, so the snapshot below is the block page — not the listings.
+              Monitoring this source needs its official API/data feed or the site owner&rsquo;s permission.
+            </p>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function FieldSample({ busy, value }: { busy: boolean; value: string | null }) {
+  const empty = value !== null && value.trim() === "";
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: "6px 10px",
+        background: "white",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        fontSize: 12,
+        color: empty ? "var(--text-muted)" : "var(--text-primary)",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        minHeight: 28
+      }}
+    >
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          color: "var(--text-muted)",
+          flexShrink: 0
+        }}
+      >
+        Sample
+      </span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {busy ? "Extracting…" : value === null ? "—" : empty ? "(empty)" : value}
+      </span>
+    </div>
+  );
+}
+
+function ChangeRow({ kind, event }: { kind: "new" | "changed" | "removed"; event: ChangeEvent }) {
+  // "changed" rows show only the fields that actually differ, as old → new.
+  const diffs =
+    kind === "changed" && event.oldData && event.newData
+      ? Object.keys(event.newData).filter(
+          (k) => formatValue(event.newData![k]) !== formatValue(event.oldData![k])
+        )
+      : [];
+  const snapshot = kind === "new" ? event.newData : kind === "removed" ? event.oldData : null;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        padding: "8px 12px",
+        border: "1px solid var(--divider)",
+        borderRadius: 8,
+        background: "white"
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Badge tone={kind === "new" ? "success" : kind === "changed" ? "warning" : "danger"}>{kind}</Badge>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 550, color: "var(--text-primary)", wordBreak: "break-all" }}>
+          {event.recordKey}
+        </span>
+      </div>
+
+      {diffs.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          {diffs.map((key) => (
+            <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 6, fontSize: 12, flexWrap: "wrap" }}>
+              <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>{key}</span>
+              <span
+                style={{
+                  color: "var(--danger-fg)",
+                  textDecoration: "line-through",
+                  maxWidth: 280,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap"
+                }}
+              >
+                {formatValue(event.oldData?.[key])}
+              </span>
+              <Icon name="arrowRight" size={11} style={{ color: "var(--text-faint)" }} />
+              <span
+                style={{
+                  color: "var(--success-fg)",
+                  maxWidth: 280,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap"
+                }}
+              >
+                {formatValue(event.newData?.[key])}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : snapshot ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px" }}>
+          {Object.entries(snapshot)
+            .slice(0, 4)
+            .map(([key, value]) => (
+              <span key={key} style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
+                <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{key}:</span>{" "}
+                <span style={{ color: "var(--text-primary)" }}>{formatValue(value).slice(0, 60)}</span>
+              </span>
+            ))}
+        </div>
+      ) : null}
     </div>
   );
 }

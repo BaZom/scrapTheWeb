@@ -63,6 +63,7 @@ export default function Home() {
   const [screenshotObjectUrl, setScreenshotObjectUrl] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<DomNode | null>(null);
   const [selectorResult, setSelectorResult] = useState<SelectorResult | null>(null);
+  const [recipeShape, setRecipeShape] = useState<"list" | "single">("list");
   const [pickMode, setPickMode] = useState<"container" | "field">("container");
   const [fieldNode, setFieldNode] = useState<DomNode | null>(null);
   const [fieldSelector, setFieldSelector] = useState<SelectorResult | null>(null);
@@ -70,6 +71,9 @@ export default function Home() {
   const [fieldExtract, setFieldExtract] = useState<ExtractType>("text");
   const [fieldAttribute, setFieldAttribute] = useState("");
   const [fields, setFields] = useState<PreviewField[]>([]);
+  const [fieldSample, setFieldSample] = useState<string | null>(null);
+  const [fieldSampleBusy, setFieldSampleBusy] = useState(false);
+  const [fieldSamples, setFieldSamples] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [recipeName, setRecipeName] = useState("");
   const [savedRecipe, setSavedRecipe] = useState<Recipe | null>(null);
@@ -181,6 +185,43 @@ export default function Home() {
     };
   }, [screenshotObjectUrl]);
 
+  // ----- Live sample for the field currently being mapped -----
+  // Debounced so rapid clicks / extract-type toggles only fire one request, and
+  // cancelled on unmount or dependency change so a stale response never wins.
+  useEffect(() => {
+    if (!session || !pageSession || !selectorResult || !fieldSelector) {
+      setFieldSample(null);
+      return;
+    }
+    let cancelled = false;
+    setFieldSampleBusy(true);
+    const probe: PreviewField = {
+      name: "sample",
+      selector: fieldSelector.selector,
+      extract: fieldExtract,
+      ...(fieldExtract === "attribute" ? { attribute: fieldAttribute.trim() } : {})
+    };
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await previewPageSession(
+          pageSession.sessionId,
+          selectorResult.selector,
+          [probe],
+          session.access_token
+        );
+        if (!cancelled) setFieldSample(result.rows[0]?.sample ?? "");
+      } catch {
+        if (!cancelled) setFieldSample(null);
+      } finally {
+        if (!cancelled) setFieldSampleBusy(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [session, pageSession, selectorResult, fieldSelector, fieldExtract, fieldAttribute]);
+
   function applyWorkspaceData([d, r, u]: [Dashboard, Recipe[], ExtractionRun[]]) {
     setDashboard(d);
     setRecipes(r);
@@ -229,11 +270,14 @@ export default function Home() {
     setSelectorResult(null);
     setFieldNode(null);
     setFieldSelector(null);
+    setFieldSample(null);
+    setFieldSamples({});
     setFields([]);
     setPreview(null);
     setSavedRecipe(null);
     setRun(null);
     setPickMode("container");
+    setRecipeShape("list");
     setImageSize(null);
   }
 
@@ -248,9 +292,25 @@ export default function Home() {
     try {
       const rendered = await createPageSession(renderUrl, session.access_token);
       setPageSession(rendered);
+      // Auto-detect page shape. A *strong* repeated candidate → list flow; otherwise
+      // single-record flow (the whole page body is the record). Detail pages have
+      // incidental repeats (spec lists, galleries) that score low, so we gate on score
+      // rather than mere presence — and the user can override via the shape toggle.
+      const strongCandidate = rendered.containerCandidates.some((c) => c.score >= 40);
+      if (strongCandidate) {
+        setRecipeShape("list");
+      } else {
+        setRecipeShape("single");
+        setSelectorResult({ selector: "body", matchCount: 1, strategy: "single" });
+        setPickMode("field");
+      }
       setRecipeName((current) => current.trim() || suggestedRecipeName(renderUrl, rendered.title));
       if (rendered.screenshotUrl) {
-        setScreenshotObjectUrl(await fetchScreenshot(rendered.screenshotUrl, session.access_token));
+        const objectUrl = await fetchScreenshot(rendered.screenshotUrl, session.access_token);
+        setScreenshotObjectUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return objectUrl;
+        });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Render failed");
@@ -273,7 +333,11 @@ export default function Home() {
     setSelectorBusy(true);
     setError(null);
     try {
-      setSelectorResult(await generateSelector(pageSession.sessionId, node.nodeId, session.access_token));
+      const result = await generateSelector(pageSession.sessionId, node.nodeId, session.access_token);
+      setSelectorResult(result);
+      // Auto-advance: once the container is locked in, the next action is always to map
+      // fields inside it, so flip the picker into Field mode for the user.
+      setPickMode("field");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Selector generation failed");
     } finally {
@@ -288,12 +352,19 @@ export default function Home() {
     setSelectorBusy(true);
     setError(null);
     try {
-      const result = await generateSelector(
-        pageSession.sessionId,
-        node.nodeId,
-        session.access_token,
-        selectorResult.selector
-      );
+      // List: selector relative to the chosen item. Single: page-wide unique selector
+      // (the "container" is the whole body, so a relative selector would be meaningless).
+      const result =
+        recipeShape === "single"
+          ? await generateSelector(pageSession.sessionId, node.nodeId, session.access_token, undefined, {
+              single: true
+            })
+          : await generateSelector(
+              pageSession.sessionId,
+              node.nodeId,
+              session.access_token,
+              selectorResult.selector
+            );
       setFieldSelector(result);
       if (!fieldName) setFieldName(defaultFieldName(node));
     } catch (e) {
@@ -317,10 +388,54 @@ export default function Home() {
       ...(fieldExtract === "attribute" ? { attribute: fieldAttribute.trim() } : {})
     };
     setFields((current) => [...current.filter((f) => f.name !== name), next]);
+    // Remember the live sample so the saved field card can keep showing a value.
+    if (fieldSample !== null) setFieldSamples((current) => ({ ...current, [name]: fieldSample }));
     setFieldName("");
     setFieldSelector(null);
     setFieldNode(null);
+    setFieldSample(null);
     setPreview(null);
+    setSavedRecipe(null);
+    setRun(null);
+  }
+
+  // Stepper navigation: clicking an earlier step rewinds the workflow by clearing
+  // everything downstream of it. `currentStep` is derived from this state, so the
+  // stepper updates itself once the relevant slices are cleared. Steps:
+  // 0 Load URL · 1 Select container · 2 Map fields · 3 Preview · 4 Save & run.
+  function handleStepNavigate(target: number) {
+    if (recipeShape === "single") {
+      // Single steps: 0 Load · 1 Choose details · 2 Preview · 3 Save. The body
+      // "container" is kept throughout; going back to details clears details forward.
+      if (target <= 1) {
+        setFields([]);
+        setFieldSamples({});
+        setFieldNode(null);
+        setFieldSelector(null);
+        setFieldSample(null);
+        setPreview(null);
+      }
+      setSavedRecipe(null);
+      setRun(null);
+      return;
+    }
+    if (target <= 1) {
+      setSelectedNode(null);
+      setSelectorResult(null);
+      setFieldNode(null);
+      setFieldSelector(null);
+      setFieldSample(null);
+      setFields([]);
+      setFieldSamples({});
+      setPickMode("container");
+    } else if (target === 2) {
+      setFieldNode(null);
+      setFieldSelector(null);
+      setFieldSample(null);
+      setPickMode("field");
+    }
+    // Landing on "Preview" (3) keeps the preview table; earlier steps clear it too.
+    if (target <= 2) setPreview(null);
     setSavedRecipe(null);
     setRun(null);
   }
@@ -350,7 +465,14 @@ export default function Home() {
     setRecipeBusy(true);
     setError(null);
     try {
-      const recipe = await createRecipe(name, renderUrl, selectorResult.selector, fields, session.access_token);
+      const recipe = await createRecipe(
+        name,
+        renderUrl,
+        selectorResult.selector,
+        fields,
+        session.access_token,
+        recipeShape === "single" ? "single" : "listing"
+      );
       setSavedRecipe(recipe);
       setRecipes((prev) => [recipe, ...prev.filter((r) => r.id !== recipe.id)]);
     } catch (e) {
@@ -415,6 +537,7 @@ export default function Home() {
       selectedNode,
       selectorResult,
       selectorBusy,
+      recipeShape,
       pickMode,
       onPickModeChange: setPickMode,
       pickerView,
@@ -430,6 +553,10 @@ export default function Home() {
       fields,
       onFieldsChange: setFields,
       onAddField: addField,
+      fieldSample,
+      fieldSampleBusy,
+      fieldSamples,
+      onStepNavigate: handleStepNavigate,
       preview,
       previewBusy,
       onRunPreview: runPreview,
@@ -458,6 +585,7 @@ export default function Home() {
       selectedNode,
       selectorResult,
       selectorBusy,
+      recipeShape,
       pickMode,
       pickerView,
       fieldNode,
@@ -466,6 +594,9 @@ export default function Home() {
       fieldExtract,
       fieldAttribute,
       fields,
+      fieldSample,
+      fieldSampleBusy,
+      fieldSamples,
       preview,
       previewBusy,
       recipeName,

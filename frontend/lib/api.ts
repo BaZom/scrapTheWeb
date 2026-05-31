@@ -61,12 +61,36 @@ const domNodeSchema = z.object({
   height: z.number()
 });
 
+const containerCandidateSchema = z.object({
+  nodeId: z.string(),
+  tag: z.string(),
+  label: z.string(),
+  group: z.string(),
+  score: z.number(),
+  reason: z.string(),
+  matchCount: z.number(),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number()
+});
+
+const accessBlockSchema = z.object({
+  blocked: z.boolean(),
+  status: z.number(),
+  vendor: z.string(),
+  reason: z.string()
+});
+
 const pageSessionSchema = z.object({
   sessionId: z.string(),
   screenshotUrl: z.string().nullable(),
   domNodes: z.array(domNodeSchema),
   title: z.string().nullable(),
-  jobStatus: z.string()
+  jobStatus: z.string(),
+  overlayDismissals: z.array(z.record(z.string())).default([]),
+  containerCandidates: z.array(containerCandidateSchema).default([]),
+  accessBlock: accessBlockSchema.nullable().default(null)
 });
 
 const selectorSchema = z.object({
@@ -151,11 +175,14 @@ export type AuthSession = z.infer<typeof authSchema>;
 export type Dashboard = z.infer<typeof dashboardSchema>;
 export type PageSession = z.infer<typeof pageSessionSchema>;
 export type DomNode = z.infer<typeof domNodeSchema>;
+export type ContainerCandidate = z.infer<typeof containerCandidateSchema>;
+export type AccessBlock = z.infer<typeof accessBlockSchema>;
 export type SelectorResult = z.infer<typeof selectorSchema>;
 export type ExtractType = z.infer<typeof extractTypeSchema>;
 export type PreviewField = z.infer<typeof previewFieldSchema>;
 export type PreviewResult = z.infer<typeof previewSchema>;
 export type Recipe = z.infer<typeof recipeSchema>;
+export type ChangeEvent = z.infer<typeof changeEventSchema>;
 export type RunCreate = z.infer<typeof runCreateSchema>;
 export type ExtractionRun = z.infer<typeof runSchema>;
 export type ApiKey = z.infer<typeof apiKeySchema>;
@@ -251,8 +278,12 @@ export async function generateSelector(
   sessionId: string,
   nodeId: string,
   accessToken: string,
-  containerSelector?: string
+  containerSelector?: string,
+  // For single-record pages: request a page-wide unique selector (mode "node", no
+  // container) instead of a container-relative one.
+  options?: { single?: boolean }
 ): Promise<SelectorResult> {
+  const mode = options?.single ? "node" : containerSelector ? "node" : "container";
   const response = await fetch(`${baseUrl}/api/page-sessions/${sessionId}/selector`, {
     method: "POST",
     headers: {
@@ -261,8 +292,8 @@ export async function generateSelector(
     },
     body: JSON.stringify({
       nodeId,
-      mode: containerSelector ? "node" : "container",
-      containerSelector
+      mode,
+      containerSelector: options?.single ? undefined : containerSelector
     })
   });
   return parseApiResponse(response, selectorSchema);
@@ -290,7 +321,8 @@ export async function createRecipe(
   url: string,
   containerSelector: string,
   fields: PreviewField[],
-  accessToken: string
+  accessToken: string,
+  pageType: "listing" | "single" = "listing"
 ): Promise<Recipe> {
   const response = await fetch(`${baseUrl}/api/recipes`, {
     method: "POST",
@@ -298,7 +330,7 @@ export async function createRecipe(
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ name, url, containerSelector, fields, pageType: "listing" })
+    body: JSON.stringify({ name, url, containerSelector, fields, pageType })
   });
   return parseApiResponse(response, recipeSchema);
 }

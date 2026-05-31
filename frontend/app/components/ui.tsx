@@ -549,25 +549,54 @@ export function Tabs<T extends string>({
 export function Stepper({
   steps,
   current,
-  compact
+  compact,
+  onStepClick
 }: {
   steps: string[];
   current: number;
   compact?: boolean;
+  // When provided, completed/current steps become clickable so users can navigate back.
+  onStepClick?: (index: number) => void;
 }) {
   return (
     <div className="stepper">
-      {steps.map((s, i) => (
-        <span key={s} style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
-          <div className={cx("step", i < current && "done", i === current && "active", compact && i !== current && "step-icon-only")}>
+      {steps.map((s, i) => {
+        const navigable = Boolean(onStepClick) && i <= current;
+        const stepClass = cx(
+          "step",
+          i < current && "done",
+          i === current && "active",
+          compact && i !== current && "step-icon-only"
+        );
+        const inner = (
+          <>
             <span className="step-num">
               {i < current ? <Icon name="check" size={12} strokeWidth={2.2} /> : (i + 1).toString().padStart(2, "0")}
             </span>
             {(!compact || i === current) && <span>{s}</span>}
-          </div>
-          {i < steps.length - 1 ? <div className="step-line" /> : null}
-        </span>
-      ))}
+          </>
+        );
+        return (
+          <span key={s} style={{ display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
+            {navigable ? (
+              <button
+                type="button"
+                className={cx(stepClass, focusRing)}
+                onClick={() => onStepClick?.(i)}
+                style={{ border: 0, background: "transparent", cursor: "pointer", font: "inherit" }}
+                aria-label={`Go to step ${i + 1}: ${s}`}
+              >
+                {inner}
+              </button>
+            ) : (
+              <div className={stepClass} aria-current={i === current ? "step" : undefined}>
+                {inner}
+              </div>
+            )}
+            {i < steps.length - 1 ? <div className="step-line" /> : null}
+          </span>
+        );
+      })}
     </div>
   );
 }
