@@ -186,16 +186,21 @@ export function BuilderView(props: BuilderProps) {
   }
 
   const overlayNodes = useMemo(() => {
+    const fieldMode = props.pickMode === "field";
     const all =
-      props.pickMode === "field" && props.selectedNode
+      fieldMode && props.selectedNode
         ? (props.pageSession?.domNodes ?? []).filter((n) =>
             isDescendant(n, props.selectedNode!, props.pageSession?.domNodes ?? [])
           )
         : props.pageSession?.domNodes ?? [];
-    return all
-      .filter((n) => n.width >= 8 && n.height >= 8)
-      .sort((a, b) => b.width * b.height - a.width * a.height)
-      .slice(0, 220);
+    // Sort largest-first so small elements paint last (on top) and win the hover
+    // hit-test. In field mode we must NOT cap to the largest boxes — small details
+    // like price/mileage are exactly what the user needs to click, and hover-only
+    // highlighting means rendering more boxes adds no visual clutter.
+    const eligible = all
+      .filter((n) => n.width >= 6 && n.height >= 6)
+      .sort((a, b) => b.width * b.height - a.width * a.height);
+    return fieldMode ? eligible : eligible.slice(0, 220);
   }, [props.pageSession, props.pickMode, props.selectedNode]);
 
   const fieldNodes = useMemo(() => {

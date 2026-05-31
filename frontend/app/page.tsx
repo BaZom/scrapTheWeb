@@ -186,41 +186,24 @@ export default function Home() {
   }, [screenshotObjectUrl]);
 
   // ----- Live sample for the field currently being mapped -----
-  // Debounced so rapid clicks / extract-type toggles only fire one request, and
-  // cancelled on unmount or dependency change so a stale response never wins.
+  // Show the value of the element the user ACTUALLY clicked, read straight from that
+  // node — not row[0] of a preview. A relative field selector matches one element per
+  // card, so previewing "the first card" showed a different listing's value than the
+  // one clicked ("text from a previous listing"). Reading the clicked node is instant
+  // and always matches what was selected.
   useEffect(() => {
-    if (!session || !pageSession || !selectorResult || !fieldSelector) {
+    if (!fieldNode) {
       setFieldSample(null);
       return;
     }
-    let cancelled = false;
-    setFieldSampleBusy(true);
-    const probe: PreviewField = {
-      name: "sample",
-      selector: fieldSelector.selector,
-      extract: fieldExtract,
-      ...(fieldExtract === "attribute" ? { attribute: fieldAttribute.trim() } : {})
-    };
-    const timer = window.setTimeout(async () => {
-      try {
-        const result = await previewPageSession(
-          pageSession.sessionId,
-          selectorResult.selector,
-          [probe],
-          session.access_token
-        );
-        if (!cancelled) setFieldSample(result.rows[0]?.sample ?? "");
-      } catch {
-        if (!cancelled) setFieldSample(null);
-      } finally {
-        if (!cancelled) setFieldSampleBusy(false);
-      }
-    }, 350);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [session, pageSession, selectorResult, fieldSelector, fieldExtract, fieldAttribute]);
+    const attrs = fieldNode.attrs ?? {};
+    let value: string;
+    if (fieldExtract === "href") value = attrs.href ?? "";
+    else if (fieldExtract === "src") value = attrs.src ?? "";
+    else if (fieldExtract === "attribute") value = attrs[fieldAttribute.trim()] ?? "";
+    else value = fieldNode.text ?? ""; // text / html (domNodes carry text, not innerHTML)
+    setFieldSample(value);
+  }, [fieldNode, fieldExtract, fieldAttribute]);
 
   function applyWorkspaceData([d, r, u]: [Dashboard, Recipe[], ExtractionRun[]]) {
     setDashboard(d);
