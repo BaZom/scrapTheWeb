@@ -20,6 +20,21 @@ class Settings(BaseSettings):
     render_result_timeout_seconds: int = Field(default=20, alias="RENDER_RESULT_TIMEOUT_SECONDS")
     page_session_ttl_seconds: int = Field(default=3600, alias="PAGE_SESSION_TTL_SECONDS")
     render_navigation_timeout_ms: int = Field(default=20000, alias="RENDER_NAVIGATION_TIMEOUT_MS")
+    # Render fingerprint: a realistic browser identity reduces naive anti-bot blocks.
+    render_user_agent: str = Field(
+        default=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        alias="RENDER_USER_AGENT",
+    )
+    render_locale: str = Field(default="en-US", alias="RENDER_LOCALE")
+    render_accept_language: str = Field(default="en-US,en;q=0.9", alias="RENDER_ACCEPT_LANGUAGE")
+    render_timezone: str = Field(default="Europe/Berlin", alias="RENDER_TIMEZONE")
+    # Headless is the default. Set false to run headful (needs a display, e.g. xvfb) —
+    # headful + the stealth patches below evade more aggressive bot detection.
+    render_headless: bool = Field(default=True, alias="RENDER_HEADLESS")
+    render_stealth: bool = Field(default=True, alias="RENDER_STEALTH")
     jwt_secret: str = Field(alias="JWT_SECRET")
     jwt_access_token_minutes: int = Field(default=15, alias="JWT_ACCESS_TOKEN_MINUTES")
     refresh_token_secret: str = Field(alias="REFRESH_TOKEN_SECRET")

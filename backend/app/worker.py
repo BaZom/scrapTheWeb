@@ -4,6 +4,7 @@ import json
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -26,11 +27,23 @@ from app.observability import (
     get_tracer,
     start_worker_metrics_server,
 )
+from app.overlay_reduction import reduce_blocking_overlays
 from app.recipe_runner import extract_preview_rows
 from app.resources import ensure_bucket, make_engine, make_redis, make_s3_client, make_sessionmaker
 
+logger = structlog.get_logger(__name__)
+
 HEARTBEAT_PATH = Path("/tmp/scraptheweb-worker-alive")
 MAX_DOM_NODES = 500
+
+# Browser-side render scripts live as standalone .js files under render_scripts/ so
+# they are not subject to Python line-length and are easy to edit/lint as JS.
+_RENDER_SCRIPTS_DIR = Path(__file__).parent / "render_scripts"
+
+
+@lru_cache(maxsize=1)
+def _render_script(name: str) -> str:
+    return (_RENDER_SCRIPTS_DIR / name).read_text(encoding="utf-8")
 
 
 async def startup(ctx: dict[str, Any]) -> None:
@@ -98,7 +111,10 @@ async def render_page(
     await _update_page_session(ctx, session_id, status="running")
     logger.info("worker_job_started")
     try:
-        rendered = await _render_with_playwright(url, ctx["settings"].render_navigation_timeout_ms)
+        rendered = await _render_with_playwright(
+            url,
+            ctx["settings"].render_navigation_timeout_ms,
+        )
         screenshot_key = f"page-sessions/{organization_id}/{session_id}/screenshot.png"
         html_key = f"page-sessions/{organization_id}/{session_id}/page.html"
 
@@ -127,8 +143,11 @@ async def render_page(
                 "url": url,
                 "screenshotKey": screenshot_key,
                 "htmlKey": html_key,
+                "overlayDismissals": rendered["overlay_dismissals"],
+                "accessBlock": rendered["access_block"],
             },
             "domNodes": rendered["dom_nodes"],
+            "containerCandidates": rendered["container_candidates"],
         }
         await ctx["redis"].set(
             f"page_session:{session_id}",
@@ -192,7 +211,10 @@ async def run_recipe(
         recipe, version = await _load_recipe_version(ctx, recipe_id, organization_id)
         config = version.config
         url = str(config.get("urlPattern") or recipe.url_pattern)
-        rendered = await _render_with_playwright(url, ctx["settings"].render_navigation_timeout_ms)
+        rendered = await _render_with_playwright(
+            url,
+            ctx["settings"].render_navigation_timeout_ms,
+        )
         rows = extract_preview_rows(
             rendered["html"],
             str(config["containerSelector"]),
@@ -248,92 +270,133 @@ async def run_recipe(
         _write_heartbeat()
 
 
-async def _render_with_playwright(url: str, navigation_timeout_ms: int) -> dict[str, Any]:
+# Anti-bot vendor signatures (server header / cookie / body markers) used only to label
+# a detected block; detection itself is driven by the HTTP status to avoid false positives.
+_BLOCK_VENDORS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Akamai", ("akamaighost", "akamai", "_abck", "reference #")),
+    ("Cloudflare", ("cloudflare", "cf-ray", "cf-mitigated", "attention required")),
+    ("DataDome", ("datadome", "x-datadome")),
+    ("Imperva", ("incapsula", "incap_ses", "_incap", "imperva")),
+    ("PerimeterX", ("perimeterx", "px-captcha", "_pxhd")),
+)
+_BLOCK_PHRASES: tuple[str, ...] = (
+    "access denied",
+    "zugriff verweigert",
+    "attention required",
+    "verify you are human",
+    "are you a robot",
+    "request blocked",
+    "you have been blocked",
+    "unusual traffic",
+)
+
+
+def _detect_access_block(
+    status: int,
+    headers: dict[str, str],
+    title: str | None,
+    body_text: str | None,
+) -> dict[str, Any] | None:
+    """Conservatively flag an anti-bot block so the UI can explain it.
+
+    Driven by HTTP status (401/403/429, or 503 with a vendor/phrase signal) to avoid
+    false positives on normal pages that merely contain words like "access denied".
+    Returns None when the page looks normal.
+    """
+    haystack = " ".join(
+        [
+            (headers.get("server") or "").lower(),
+            (title or "").lower(),
+            (body_text or "")[:2000].lower(),
+            " ".join(f"{key}:{value}" for key, value in headers.items()).lower(),
+        ]
+    )
+    vendor = next(
+        (name for name, markers in _BLOCK_VENDORS if any(m in haystack for m in markers)),
+        None,
+    )
+    phrase_hit = any(phrase in haystack for phrase in _BLOCK_PHRASES)
+
+    blocked = status in (401, 403, 429) or (status == 503 and (vendor or phrase_hit))
+    if not blocked:
+        return None
+
+    reason = (
+        f"{vendor + ' ' if vendor else ''}bot protection denied access "
+        f"(HTTP {status}). This site blocks automated browsers."
+    )
+    return {
+        "blocked": True,
+        "status": int(status),
+        "vendor": vendor or "unknown",
+        "reason": reason,
+    }
+
+
+async def _render_with_playwright(
+    url: str,
+    navigation_timeout_ms: int,
+) -> dict[str, Any]:
+    settings = get_settings()
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
+        browser = await playwright.chromium.launch(
+            headless=settings.render_headless,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
         try:
-            page = await browser.new_page(viewport={"width": 1440, "height": 1200})
+            context = await browser.new_context(
+                viewport={"width": 1440, "height": 1200},
+                user_agent=settings.render_user_agent,
+                locale=settings.render_locale,
+                timezone_id=settings.render_timezone,
+                extra_http_headers={"Accept-Language": settings.render_accept_language},
+            )
+            if settings.render_stealth:
+                await context.add_init_script(_render_script("stealth.js"))
+            page = await context.new_page()
             page.set_default_navigation_timeout(navigation_timeout_ms)
-            await page.goto(url, wait_until="networkidle", timeout=navigation_timeout_ms)
+            # domcontentloaded (not networkidle): ad/tracking-heavy SPAs like autoscout24
+            # never go network-idle, so networkidle would time out and fail the whole
+            # render. Then give the page a brief, best-effort settle to let listings paint.
+            response = await page.goto(
+                url, wait_until="domcontentloaded", timeout=navigation_timeout_ms
+            )
+            try:
+                await page.wait_for_load_state("networkidle", timeout=3000)
+            except Exception:
+                pass
+            overlay_dismissals = await reduce_blocking_overlays(page)
             title = await page.title()
             html = await page.content()
             screenshot = await page.screenshot(full_page=True, type="png")
-            dom_nodes = await page.evaluate(
-                """
-                (maxNodes) => {
-                  const elements = Array.from(document.querySelectorAll("body *"));
-                  const visible = [];
-                  const visibleByElement = new Map();
-
-                  elements.forEach((element, index) => {
-                    const rect = element.getBoundingClientRect();
-                    const style = window.getComputedStyle(element);
-                    if (
-                      rect.width < 1 ||
-                      rect.height < 1 ||
-                      style.visibility === "hidden" ||
-                      style.display === "none"
-                    ) {
-                      return;
-                    }
-                    const text = (element.innerText || element.textContent || "")
-                      .replace(/\\s+/g, " ")
-                      .trim()
-                      .slice(0, 160);
-                    const attrs = {};
-                    for (const attr of element.attributes) {
-                      if (
-                        attr.name === "id" ||
-                        attr.name === "class" ||
-                        attr.name === "role" ||
-                        attr.name === "itemprop" ||
-                        attr.name.startsWith("data-")
-                      ) {
-                        attrs[attr.name] = attr.value.slice(0, 160);
-                      }
-                    }
-                    const sameTypeBefore = Array.from(element.parentElement?.children || [])
-                      .filter((sibling) => sibling.tagName === element.tagName)
-                      .indexOf(element) + 1;
-                    const node = {
-                      nodeId: `node-${index}`,
-                      tag: element.tagName.toLowerCase(),
-                      text,
-                      attrs,
-                      classes: Array.from(element.classList).slice(0, 12),
-                      parentNodeId: null,
-                      nthOfType: sameTypeBefore || 1,
-                      x: Math.round(rect.x * 100) / 100,
-                      y: Math.round(rect.y * 100) / 100,
-                      width: Math.round(rect.width * 100) / 100,
-                      height: Math.round(rect.height * 100) / 100
-                    };
-                    visibleByElement.set(element, node);
-                    visible.push({ element, node });
-                  });
-
-                  for (const entry of visible) {
-                    let parent = entry.element.parentElement;
-                    while (parent) {
-                      const visibleParent = visibleByElement.get(parent);
-                      if (visibleParent) {
-                        entry.node.parentNodeId = visibleParent.nodeId;
-                        break;
-                      }
-                      parent = parent.parentElement;
-                    }
-                  }
-
-                  return visible.map((entry) => entry.node).slice(0, maxNodes);
-                }
-                """,
-                MAX_DOM_NODES,
+            body_text = await page.evaluate(
+                "() => (document.body ? document.body.innerText : '').slice(0, 2000)"
+            )
+            access_block = _detect_access_block(
+                response.status if response else 0,
+                dict(response.headers) if response else {},
+                title,
+                body_text,
+            )
+            # Candidate extraction is best-effort: a JS hiccup here must NOT discard the
+            # screenshot/HTML we already captured, so degrade to empty lists on error.
+            try:
+                evaluated = await page.evaluate(_render_script("dom_candidates.js"), MAX_DOM_NODES)
+            except Exception:
+                logger.exception("dom_candidate_extraction_failed")
+                evaluated = {}
+            dom_nodes = evaluated.get("domNodes", []) if isinstance(evaluated, dict) else []
+            container_candidates = (
+                evaluated.get("candidates", []) if isinstance(evaluated, dict) else []
             )
             return {
                 "title": title,
                 "html": html,
                 "screenshot": screenshot,
                 "dom_nodes": dom_nodes,
+                "container_candidates": container_candidates,
+                "overlay_dismissals": overlay_dismissals,
+                "access_block": access_block,
             }
         finally:
             await browser.close()
