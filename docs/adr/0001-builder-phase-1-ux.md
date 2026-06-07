@@ -238,7 +238,8 @@ foundational follow-ups, in order of leverage:
 
 1. **State machine (`useReducer`/XState)** — replaces the ~28 `useState` flags and
    the ~40-prop `builderProps` memo in `page.tsx`. Look up *finite state machines*,
-   *reducer pattern*, *prop drilling vs. context*. *(Backlog — see ADR 0007.)*
+   *reducer pattern*, *prop drilling vs. context*. *(Done — ADR 0007 Decision 4, via a
+   tested useReducer; the prop memo remains, pruning it is a later step.)*
 2. **SSE for run progress** — replaces the 1.5 s `setInterval` poll and enables real
    log lines. Look up *Server-Sent Events*, *EventSource*, *long-polling vs.
    streaming*. *(Done — ADR 0007 Decision 3, via fetch+ReadableStream; real per-event

@@ -1,11 +1,11 @@
-# ADR 0007 — Builder Foundations: authoritative matches, draft persistence
+# ADR 0007 — Builder Foundations: authoritative matches, draft persistence, SSE, reducer
 
-- **Status:** Accepted / in progress
+- **Status:** Accepted
 - **Date:** 2026-06-07
 - **Scope:** `backend/app/selector_generator.py`, `backend/app/page_sessions.py`,
-  `backend/app/recipes.py`, `frontend/lib/api.ts`,
-  `frontend/app/components/builder-view.tsx`, `frontend/app/page.tsx`
-- **Builds on / closes follow-ups from:** ADR 0001 ("What to read next" backlog).
+  `backend/app/recipes.py`, `frontend/lib/api.ts`, `frontend/lib/builder-reducer.ts`,
+  `frontend/app/components/builder-view.tsx`, `frontend/app/page.tsx`, `frontend/vitest.config.ts`
+- **Builds on / closes follow-ups from:** ADR 0001 ("What to read next" backlog — all four done).
 
 ADR 0001 shipped the Phase-1 builder UX and ended with four foundational follow-ups
 it kept bumping into: (1) a real state machine, (2) SSE run progress, (3) the selector
@@ -167,15 +167,51 @@ little user value on a sub-minute job. Revisit if runs grow into multi-step craw
 
 ---
 
-## Still on the backlog (not in this ADR yet)
+## Decision 4 — The builder flow runs on a reducer (state machine)
 
-- **State machine** — replace the ~40 `useState` flags and the large `builderProps` memo
-  in `page.tsx` with a reducer. Highest leverage, highest risk (no frontend test harness
-  yet), so it wants its own focused change with manual verification.
+**What:** the ~18 builder `useState` flags in `page.tsx` are replaced by a single
+`useReducer` over `builderReducer` (`lib/builder-reducer.ts`) with named actions
+(`render_succeeded`, `container_selecting`, `field_added`, `step_navigated`, …). State is
+destructured back to the same names, so reads are unchanged; only writes — now
+`dispatch(action)` — change.
+
+**Why:** the transitions were spread across handlers that each had to remember to clear
+the right downstream slices. "Going back" (`handleStepNavigate`) and re-picking an item
+each cleared ~8 pieces of state by hand — exactly the desync hazard ADR 0001 Decision 2
+flagged. A reducer makes every transition atomic and named, so a transition can't
+half-update, and the clearing rules live in one place.
+
+**Why now, and not earlier:** when the builder looked settled this was hard to justify as
+pure cleanup. The decision flipped once an **assistant** (page analysis + hints) landed on
+the roadmap: accepting a suggestion is a *bulk* mutation (item + several fields + shape at
+once), which is precisely the multi-setter pattern that desyncs — one `dispatch` makes it
+safe. So the reducer is the foundation the assistant will build on, not cleanup for its
+own sake.
+
+**De-risked in three steps**, each its own commit: (1) add a Vitest harness — the
+frontend had no tests at all; (2) build the reducer as a pure, fully-tested module with no
+wiring; (3) swap `page.tsx` over. Because the reducer is a pure function, the builder's
+transition logic is now unit-tested (19 cases), including the desync-prone
+step-navigation clearing for both list and single flows.
+
+**What stayed out of the reducer:** state with no cross-slice invariant — the screenshot
+blob URL (side-effect lifecycle), the derived live field sample, sample-busy, the canvas
+view toggle, and all async/error/auth/workspace state. Putting those in the reducer would
+add ceremony without removing a desync risk.
+
+**Concepts to look up:**
+- **Reducer pattern / finite state machines** — modeling UI as `(state, action) → state`.
+- **Pure functions and testability** — why moving logic out of effects/handlers into a
+  reducer is what makes it unit-testable.
+- **Refactor under a safety net** — harness first, mirror behavior, swap last; and using
+  the type checker (removed setters become compile errors) to find every call site.
 
 ## Verification
 - Backend: `generate_selector` returns `matchedNodeIds` in both modes, verified against
   the real module on a synthetic grid; new cases in `tests/test_selector_generator.py`
   (`...returns_every_matched_node_id`, `...across_containers`).
-- Frontend: `tsc --noEmit` and `next lint` clean. Reload-resume is browser behavior and
-  is verified by running the stack (no frontend unit harness in the repo).
+- Frontend: a Vitest harness now exists (`npm test`). The builder reducer has 19 cases
+  covering shape detection, selection/auto-advance, field add, and step-navigation
+  clearing. `tsc --noEmit`, `next lint`, and `next build` are clean. Browser behavior
+  (reload-resume, live SSE, the builder click-through after the reducer swap) is verified
+  by running the stack.
