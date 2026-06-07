@@ -18,6 +18,8 @@ SLICE_PROMPTS.txt
 SLICE_*.md
 IMPLEMENTATION_STATUS.md
 DESIGN_PASS.md
+# Local agent context — kept on disk for Claude Code, never committed
+CLAUDE.md
 
 # Python
 __pycache__/
