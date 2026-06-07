@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type AuthSession,
@@ -46,8 +46,28 @@ import {
 import type { AppView } from "./data/product-ui";
 
 const storageKey = "scraptheweb.auth";
+// Builder drafts are ephemeral page sessions today: a refresh threw away all mapping
+// work. We snapshot the in-progress builder here so a reload resumes exactly where the
+// user left off. Versioned so a shape change can invalidate old drafts instead of
+// crashing on restore.
+const builderDraftKey = "scraptheweb.builder-draft.v1";
 
 type StoredSession = Pick<AuthSession, "access_token" | "refresh_token">;
+
+// Only the state needed to reconstruct the canvas + mapping. Transient results
+// (preview/run/savedRecipe) and the blob screenshot URL are intentionally excluded —
+// the screenshot is re-fetched from pageSession.screenshotUrl on restore.
+type BuilderDraft = {
+  renderUrl: string;
+  recipeName: string;
+  recipeShape: "list" | "single";
+  pickMode: "container" | "field";
+  pageSession: PageSession;
+  selectedNode: DomNode | null;
+  selectorResult: SelectorResult | null;
+  fields: PreviewField[];
+  fieldSamples: Record<string, string>;
+};
 
 export default function Home() {
   const [mode, setMode] = useState<AuthMode>("signin");
@@ -90,6 +110,12 @@ export default function Home() {
   const [exportBusy, setExportBusy] = useState<"csv" | "json" | null>(null);
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  // Set to a restored draft's sessionId so the screenshot-restore effect knows to
+  // re-fetch the blob (which can't be serialized) once an auth token is available.
+  const [restoredSessionId, setRestoredSessionId] = useState<string | null>(null);
+  // Skip the persist effect's first invocation so it can't clobber a stored draft
+  // before the restore effect has read it.
+  const draftPersistReady = useRef(false);
 
   // ----- Load stored session on mount -----
   useEffect(() => {
@@ -99,6 +125,29 @@ export default function Home() {
       setSession(JSON.parse(raw) as StoredSession);
     } catch {
       window.localStorage.removeItem(storageKey);
+    }
+  }, []);
+
+  // ----- Restore an in-progress builder draft on mount -----
+  useEffect(() => {
+    const raw = window.localStorage.getItem(builderDraftKey);
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as BuilderDraft;
+      if (!draft.pageSession?.sessionId) throw new Error("malformed draft");
+      setRenderUrl(draft.renderUrl);
+      setRecipeName(draft.recipeName);
+      setRecipeShape(draft.recipeShape);
+      setPickMode(draft.pickMode);
+      setPageSession(draft.pageSession);
+      setSelectedNode(draft.selectedNode);
+      setSelectorResult(draft.selectorResult);
+      setFields(draft.fields);
+      setFieldSamples(draft.fieldSamples);
+      setRestoredSessionId(draft.pageSession.sessionId);
+      setActiveView("builder");
+    } catch {
+      window.localStorage.removeItem(builderDraftKey);
     }
   }, []);
 
@@ -184,6 +233,80 @@ export default function Home() {
       if (screenshotObjectUrl) URL.revokeObjectURL(screenshotObjectUrl);
     };
   }, [screenshotObjectUrl]);
+
+  // ----- Re-fetch the screenshot for a restored draft -----
+  // The screenshot is a blob object URL that can't be serialized, so the restore
+  // effect only records the sessionId. Once a token is available we re-fetch it from
+  // the page session (still alive within its server-side TTL). If the session has
+  // expired the canvas image just stays blank; the mapping work is still intact.
+  useEffect(() => {
+    if (!restoredSessionId || !session || !pageSession?.screenshotUrl) return;
+    let cancelled = false;
+    fetchScreenshot(pageSession.screenshotUrl, session.access_token)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setScreenshotObjectUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return url;
+        });
+      })
+      .catch(() => {
+        /* session likely expired — keep the restored mapping, drop the image */
+      })
+      .finally(() => {
+        if (!cancelled) setRestoredSessionId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [restoredSessionId, session, pageSession]);
+
+  // ----- Persist the in-progress builder draft (debounced) -----
+  // Snapshot iff a page session exists (i.e. there is real work to resume); otherwise
+  // clear the draft — this also fires on sign-out/reset, which null the page session.
+  // The first run is skipped so it can't wipe the stored draft before restore reads it.
+  useEffect(() => {
+    if (!draftPersistReady.current) {
+      draftPersistReady.current = true;
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      if (!pageSession) {
+        window.localStorage.removeItem(builderDraftKey);
+        return;
+      }
+      const draft: BuilderDraft = {
+        renderUrl,
+        recipeName,
+        recipeShape,
+        pickMode,
+        pageSession,
+        selectedNode,
+        selectorResult,
+        fields,
+        fieldSamples
+      };
+      try {
+        window.localStorage.setItem(builderDraftKey, JSON.stringify(draft));
+      } catch {
+        /* quota exceeded (large DOM) — skip persistence rather than break the app */
+      }
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [
+    pageSession,
+    renderUrl,
+    recipeName,
+    recipeShape,
+    pickMode,
+    selectedNode,
+    selectorResult,
+    fields,
+    fieldSamples
+  ]);
 
   // ----- Live sample for the field currently being mapped -----
   // Show the value of the element the user ACTUALLY clicked, read straight from that
