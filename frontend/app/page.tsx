@@ -47,6 +47,7 @@ import {
 import type { AppView } from "./data/product-ui";
 
 const storageKey = "scraptheweb.auth";
+const runTerminalStatuses = new Set(["completed", "failed"]);
 // Builder drafts are ephemeral page sessions today: a refresh threw away all mapping
 // work. We snapshot the in-progress builder here so a reload resumes exactly where the
 // user left off. Versioned so a shape change can invalidate old drafts instead of
@@ -212,24 +213,58 @@ export default function Home() {
   // the run is non-terminal, so the stream opens once per run and the effect does NOT
   // restart on every status update (which would reconnect on each event); it tears down
   // when the run reaches a terminal state.
-  const activeRunId =
-    run && !["completed", "failed"].includes(run.status) ? run.id : null;
+  const activeRunId = run && !runTerminalStatuses.has(run.status) ? run.id : null;
   useEffect(() => {
     if (!session || !activeRunId) return;
     const controller = new AbortController();
-    streamRunEvents(
-      activeRunId,
-      session.access_token,
-      (next) => {
-        setRun(next);
-        setRuns((prev) => [next, ...prev.filter((r) => r.id !== next.id)]);
-      },
-      controller.signal
-    ).catch((e) => {
-      if (controller.signal.aborted) return;
-      setError(e instanceof Error ? e.message : "Run status stream failed");
-    });
-    return () => controller.abort();
+    let cancelled = false;
+    let polling = false;
+    let latestTerminal = false;
+    let pollTimer: number | null = null;
+
+    const applyRunUpdate = (next: ExtractionRun) => {
+      latestTerminal = runTerminalStatuses.has(next.status);
+      setRun(next);
+      setRuns((prev) => [next, ...prev.filter((r) => r.id !== next.id)]);
+    };
+
+    const pollRun = async () => {
+      if (cancelled) return;
+      try {
+        const next = await getRun(activeRunId, session.access_token);
+        if (cancelled) return;
+        applyRunUpdate(next);
+        if (!runTerminalStatuses.has(next.status)) {
+          pollTimer = window.setTimeout(() => void pollRun(), 1500);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Run status refresh failed");
+      }
+    };
+
+    const startPollingFallback = () => {
+      if (cancelled || polling || latestTerminal) return;
+      polling = true;
+      void pollRun();
+    };
+
+    void streamRunEvents(activeRunId, session.access_token, applyRunUpdate, controller.signal)
+      .then(() => {
+        // SSE can be closed by a proxy or by the server-side stream cap before the run
+        // reaches a terminal state. Polling keeps progress reliable without giving up
+        // the SSE happy path.
+        startPollingFallback();
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        if (e instanceof Error && e.name === "AbortError") return;
+        startPollingFallback();
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (pollTimer !== null) window.clearTimeout(pollTimer);
+    };
   }, [activeRunId, session]);
 
   // ----- Clean up screenshot blob -----

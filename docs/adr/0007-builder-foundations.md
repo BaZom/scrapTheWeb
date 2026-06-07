@@ -110,8 +110,9 @@ session exists and is otherwise removed. That one rule also covers sign-out and 
 
 **What:** `GET /api/runs/{id}/events` streams the run as Server-Sent Events — the full
 `RunResponse` on every change — until the run reaches a terminal state. The frontend
-opens it once per run (replacing the 1.5 s `setInterval` poll) and replaces its run
-state wholesale on each frame.
+opens it once per run as the primary progress path and replaces its run state wholesale
+on each frame. If the stream errors or closes while the run is still non-terminal, the
+client quietly falls back to the previous `getRun` polling loop.
 
 **Why fetch + ReadableStream, not `EventSource`:** the native `EventSource` API cannot
 set request headers, and this API authenticates with Bearer tokens / `X-API-Key` (no
@@ -137,7 +138,10 @@ trip — for negligible bandwidth.
 
 **Effect hygiene on the client:** the effect keys on a derived `activeRunId` (the id only
 while the run is non-terminal), so the stream opens once per run rather than reconnecting
-on every pushed update, and tears down cleanly when the run finishes.
+on every pushed update, and tears down cleanly when the run finishes. A tiny transport
+state inside the effect tracks whether a terminal frame has arrived; if not, stream
+failure or early close starts a polling fallback. Cleanup aborts the stream and clears
+any fallback timer.
 
 **Alternatives rejected:**
 - *Keep polling, just faster* — more requests, still client-driven, and timestamps stay
@@ -155,6 +159,8 @@ little user value on a sub-minute job. Revisit if runs grow into multi-step craw
 - **Server-Sent Events** framing (`data:` lines, `\n\n` delimiter) and why it fits
   one-way streaming; **SSE vs. WebSockets vs. long-polling**.
 - **`EventSource` header limitation** and the `fetch` + `ReadableStream` pattern.
+- **Progressive fallback** — use the best transport first, but keep an older, boring
+  transport as a reliability safety net across proxies and flaky networks.
 - **Connection lifetime** under streaming responses — why you release the request-scoped
   DB session and poll with short-lived ones.
 - **Deriving an effect key** (`activeRunId`) to avoid reconnect-per-update churn.
