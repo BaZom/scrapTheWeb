@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # headful + the stealth patches below evade more aggressive bot detection.
     render_headless: bool = Field(default=True, alias="RENDER_HEADLESS")
     render_stealth: bool = Field(default=True, alias="RENDER_STEALTH")
+    # Abort requests to known ad/analytics/tracker domains during render — faster loads,
+    # less consent noise, cleaner screenshots. Off-switch if a site misbehaves.
+    render_block_ads: bool = Field(default=True, alias="RENDER_BLOCK_ADS")
     jwt_secret: str = Field(alias="JWT_SECRET")
     jwt_access_token_minutes: int = Field(default=15, alias="JWT_ACCESS_TOKEN_MINUTES")
     refresh_token_secret: str = Field(alias="REFRESH_TOKEN_SECRET")

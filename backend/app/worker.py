@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -32,6 +33,33 @@ from app.recipe_runner import extract_preview_rows
 from app.resources import ensure_bucket, make_engine, make_redis, make_s3_client, make_sessionmaker
 
 logger = structlog.get_logger(__name__)
+
+# Conservative ad/analytics/tracker domains aborted during render (when RENDER_BLOCK_ADS).
+# Deliberately excludes consent CMPs (handled by overlay_reduction) and content CDNs.
+# Matched against the full request URL via one native regex route, so non-matching
+# requests never round-trip to Python.
+_AD_DOMAINS = (
+    "doubleclick.net", "googlesyndication.com", "googletagmanager.com",
+    "google-analytics.com", "googleadservices.com", "adservice.google",
+    "amazon-adsystem.com", "adnxs.com", "criteo.com", "criteo.net", "taboola.com",
+    "outbrain.com", "rubiconproject.com", "pubmatic.com", "openx.net",
+    "casalemedia.com", "smartadserver.com", "adform.net", "moatads.com",
+    "doubleverify.com", "adsafeprotected.com", "scorecardresearch.com",
+    "quantserve.com", "hotjar.com", "mixpanel.com", "fullstory.com", "segment.io",
+    "clarity.ms", "bat.bing.com", "mc.yandex.ru", "teads.tv", "33across.com",
+)
+_AD_URL_RE = re.compile("|".join(re.escape(domain) for domain in _AD_DOMAINS), re.IGNORECASE)
+
+
+async def _block_ad_route(route: Any) -> None:
+    try:
+        await route.abort()
+    except Exception:
+        try:
+            await route.continue_()
+        except Exception:
+            pass
+
 
 HEARTBEAT_PATH = Path("/tmp/scraptheweb-worker-alive")
 # Headroom so a one-item page keeps the whole item (main fields + details), not just the
@@ -399,6 +427,8 @@ async def _render_with_playwright(
             )
             if settings.render_stealth:
                 await context.add_init_script(_render_script("stealth.js"))
+            if settings.render_block_ads:
+                await context.route(_AD_URL_RE, _block_ad_route)
             page = await context.new_page()
             page.set_default_navigation_timeout(navigation_timeout_ms)
             # domcontentloaded (not networkidle): ad/tracking-heavy SPAs like autoscout24

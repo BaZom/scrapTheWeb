@@ -91,6 +91,17 @@ click timeouts, and `Escape` re-triggering the loop on lingering modals.
 time is real work (navigation, screenshot, DOM extraction). Reusing one browser across
 renders (instead of launching per render) is a further win, left for later.
 
+## 7. Ad/tracker request blocking (`RENDER_BLOCK_ADS`, default on)
+
+The render previously loaded **all** ad/analytics/tracking requests — the reason
+`networkidle` never settles. A single native regex route now **aborts** requests to a
+conservative list of well-known ad/analytics domains (`_AD_DOMAINS` in `worker.py`):
+faster loads, less consent noise, cleaner screenshots. It deliberately **excludes**
+consent CMPs (handled by overlay reduction) and content CDNs, to avoid blanking real
+content; one regex route means non-matching requests never round-trip to Python. Measured
+~3.35s → **~2.74s** on autoscout (mostly first-party; ad-heavy sites save more). Behind
+`RENDER_BLOCK_ADS` so it can be switched off if a site misbehaves.
+
 ## Concepts to look up
 - **Budgeted DOM serialization** — why *which* nodes you keep matters more than how many,
   and why the right baseline differs for list vs single pages.
