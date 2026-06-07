@@ -335,6 +335,50 @@ def _detect_access_block(
     }
 
 
+async def _wait_for_dom_stable(
+    page: Any,
+    *,
+    timeout_ms: int = 4000,
+    quiet_ms: int = 600,
+    poll_ms: int = 150,
+) -> int:
+    """Wait until the live element count stops changing for ``quiet_ms`` (capped at ``timeout_ms``).
+
+    Dismissing a consent CMP can tear the page down and rebuild it: sites like kleinanzeigen
+    collapse to a ~40-element shell on "reject all", then re-hydrate the listings over ~1-2s.
+    networkidle is unreliable here (ad/tracking-heavy SPAs never reach it), so we poll the
+    element count instead. The ``count > 100`` guard avoids latching onto the collapsed shell.
+    Returns the last observed element count.
+
+    A failing ``evaluate`` means the execution context was just destroyed — i.e. the page is
+    navigating/rebuilding *right now*, which is exactly what we're here to wait through. So we
+    treat it as "not stable yet" (reset the streak and keep polling) rather than giving up;
+    bailing here would snapshot the half-built shell on slower re-hydrations.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    last_count = -1
+    stable_since: float | None = None
+    while time.monotonic() < deadline:
+        try:
+            count = await page.evaluate("() => document.querySelectorAll('*').length")
+        except Exception:
+            # Context torn down mid-rebuild: the DOM is in flux, so reset the streak.
+            count, stable_since, last_count = -1, None, -1
+        if count == last_count and count > 100:
+            if stable_since is None:
+                stable_since = time.monotonic()
+            elif (time.monotonic() - stable_since) * 1000 >= quiet_ms:
+                return count
+        else:
+            stable_since = None
+            last_count = count
+        try:
+            await page.wait_for_timeout(poll_ms)
+        except Exception:
+            await asyncio.sleep(poll_ms / 1000)
+    return last_count
+
+
 async def _render_with_playwright(
     url: str,
     navigation_timeout_ms: int,
@@ -371,6 +415,13 @@ async def _render_with_playwright(
             except Exception:
                 pass
             overlay_dismissals = await reduce_blocking_overlays(page)
+            # Dismissing a consent CMP can tear the page down and rebuild it (kleinanzeigen
+            # collapses to a ~40-element shell on "reject all", then re-hydrates the listings).
+            # Capturing page.content() before that rebuild persists the empty shell, so the
+            # screenshot/picker (taken later, once re-hydrated) show data but preview/extraction
+            # find nothing. Wait for the DOM to re-stabilize before snapshotting.
+            if overlay_dismissals:
+                await _wait_for_dom_stable(page)
             title = await page.title()
             html = await page.content()
             screenshot = await page.screenshot(full_page=True, type="png")
