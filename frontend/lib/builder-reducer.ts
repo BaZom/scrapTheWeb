@@ -225,7 +225,10 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
     }
 
     case "fields_changed":
-      return { ...state, fields: action.fields };
+      // Editing the field set (remove/reorder) invalidates the preview table — it was
+      // extracted for a different set of fields. Clear it so a stale table can't show a
+      // column the user just removed (matches field_added, which also clears preview).
+      return { ...state, fields: action.fields, preview: null };
 
     case "pick_mode_changed":
       return { ...state, pickMode: action.mode };

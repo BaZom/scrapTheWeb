@@ -287,6 +287,17 @@ describe("step_navigated (single)", () => {
 
 // ---- reset / restore / simple setters -------------------------------------
 
+describe("fields_changed", () => {
+  it("clears the stale preview so a removed field can't linger in the table", () => {
+    const s = builderReducer(deepListState(), {
+      type: "fields_changed",
+      fields: [{ name: "title", selector: "h2", extract: "text" }]
+    });
+    expect(s.fields).toHaveLength(1);
+    expect(s.preview).toBeNull();
+  });
+});
+
 describe("reset and restore", () => {
   it("reset clears the flow but preserves URL and field-editor defaults", () => {
     const s = builderReducer(

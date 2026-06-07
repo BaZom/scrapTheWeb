@@ -119,6 +119,9 @@ export default function Home() {
   // Skip the persist effect's first invocation so it can't clobber a stored draft
   // before the restore effect has read it.
   const draftPersistReady = useRef(false);
+  // Last persisted "structural" snapshot key. Structural changes (pick item, add/remove
+  // field, render) persist immediately; only text edits (recipe/field name) are debounced.
+  const draftStructuralKey = useRef("");
 
   // ----- Load stored session on mount -----
   useEffect(() => {
@@ -297,16 +300,15 @@ export default function Home() {
     };
   }, [restoredSessionId, session, pageSession]);
 
-  // ----- Persist the in-progress builder draft (debounced) -----
+  // ----- Persist the in-progress builder draft -----
   // Snapshot iff a page session exists (i.e. there is real work to resume); otherwise
   // clear the draft — this also fires on sign-out/reset, which null the page session.
-  // The first run is skipped so it can't wipe the stored draft before restore reads it.
+  // Structural changes (pick item, add/remove field, render, navigate) persist
+  // IMMEDIATELY so a reload right after a click can't lose them; pure text edits
+  // (recipe/field name) are debounced to avoid re-serializing the large DOM on every
+  // keystroke. The first run is skipped so it can't wipe the stored draft before restore.
   useEffect(() => {
-    if (!draftPersistReady.current) {
-      draftPersistReady.current = true;
-      return;
-    }
-    const handle = window.setTimeout(() => {
+    const writeDraft = () => {
       if (!pageSession) {
         window.localStorage.removeItem(builderDraftKey);
         return;
@@ -327,7 +329,29 @@ export default function Home() {
       } catch {
         /* quota exceeded (large DOM) — skip persistence rather than break the app */
       }
-    }, 400);
+    };
+
+    const structuralKey = JSON.stringify({
+      session: pageSession?.sessionId ?? null,
+      shape: recipeShape,
+      pick: pickMode,
+      node: selectedNode?.nodeId ?? null,
+      selector: selectorResult?.selector ?? null,
+      fields
+    });
+
+    if (!draftPersistReady.current) {
+      draftPersistReady.current = true;
+      draftStructuralKey.current = structuralKey;
+      return;
+    }
+
+    if (structuralKey !== draftStructuralKey.current) {
+      draftStructuralKey.current = structuralKey;
+      writeDraft();
+      return;
+    }
+    const handle = window.setTimeout(writeDraft, 400);
     return () => window.clearTimeout(handle);
   }, [
     pageSession,
