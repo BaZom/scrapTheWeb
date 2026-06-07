@@ -1,6 +1,8 @@
+import asyncio
 import csv
 import io
 import json
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
@@ -8,6 +10,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -507,6 +510,73 @@ async def get_run(
 ) -> RunResponse:
     run = await _org_scoped_run(run_id, user, session)
     return _run_response(run)
+
+
+# Bounds an SSE run stream: it ends as soon as the run reaches a terminal state, so the
+# cap only matters for an abandoned/stuck job. Poll interval matches the old client poll.
+_RUN_STREAM_MAX_SECONDS = 300
+_RUN_STREAM_POLL_SECONDS = 1.0
+_RUN_TERMINAL_STATES = ("completed", "failed")
+
+
+@router.get("/api/runs/{run_id}/events")
+async def stream_run_events(
+    run_id: UUID,
+    request: Request,
+    user: Annotated[User, Depends(current_user_or_api_key)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> StreamingResponse:
+    """Stream a run's state as Server-Sent Events until it reaches a terminal state.
+
+    Replaces the frontend's 1.5 s poll: the server watches the run and pushes the full
+    RunResponse whenever it changes. We authorize once up front (404 if the run isn't in
+    the caller's org), then re-read the run with short-lived sessions inside the stream so
+    we don't pin the request-scoped connection for the whole stream. Consumed via fetch +
+    ReadableStream on the client, so the normal Bearer/X-API-Key auth header applies (the
+    native EventSource API can't set headers).
+    """
+    run = await _org_scoped_run(run_id, user, session)
+    org_id = run.organization_id
+    sessionmaker = request.app.state.sessionmaker
+    # Release the request-scoped connection now: the stream can stay open for minutes and
+    # only needs the short-lived per-poll sessions below, not this one.
+    await session.close()
+
+    async def event_stream() -> AsyncIterator[str]:
+        last_payload: str | None = None
+        deadline = asyncio.get_event_loop().time() + _RUN_STREAM_MAX_SECONDS
+        while asyncio.get_event_loop().time() < deadline:
+            if await request.is_disconnected():
+                return
+            async with sessionmaker() as poll_session:
+                result = await poll_session.execute(
+                    select(ExtractionRun)
+                    .options(
+                        selectinload(ExtractionRun.records),
+                        selectinload(ExtractionRun.change_events),
+                    )
+                    .where(
+                        ExtractionRun.id == run_id,
+                        ExtractionRun.organization_id == org_id,
+                    )
+                )
+                run_row = result.scalar_one_or_none()
+            if run_row is None:
+                yield 'event: error\ndata: {"detail": "Run not found"}\n\n'
+                return
+            payload = json.dumps(_run_response(run_row).model_dump(mode="json"))
+            if payload != last_payload:
+                last_payload = payload
+                yield f"data: {payload}\n\n"
+            if run_row.status in _RUN_TERMINAL_STATES:
+                return
+            await asyncio.sleep(_RUN_STREAM_POLL_SECONDS)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/api/runs/{run_id}/export.csv")

@@ -20,6 +20,7 @@ import {
   generateSelector,
   getDashboard,
   getRun,
+  streamRunEvents,
   listRecipes,
   listRuns,
   login,
@@ -206,26 +207,30 @@ export default function Home() {
     };
   }, [session]);
 
-  // ----- Poll active run -----
+  // ----- Stream the active run's progress (SSE) -----
+  // Server-pushed updates replace the old 1.5 s poll. `activeRunId` is the id only while
+  // the run is non-terminal, so the stream opens once per run and the effect does NOT
+  // restart on every status update (which would reconnect on each event); it tears down
+  // when the run reaches a terminal state.
+  const activeRunId =
+    run && !["completed", "failed"].includes(run.status) ? run.id : null;
   useEffect(() => {
-    if (!session || !run || ["completed", "failed"].includes(run.status)) return;
-    let cancelled = false;
-    const t = window.setInterval(async () => {
-      try {
-        const next = await getRun(run.id, session.access_token);
-        if (!cancelled) {
-          setRun(next);
-          setRuns((prev) => [next, ...prev.filter((r) => r.id !== next.id)]);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Run status refresh failed");
-      }
-    }, 1500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(t);
-    };
-  }, [run, session]);
+    if (!session || !activeRunId) return;
+    const controller = new AbortController();
+    streamRunEvents(
+      activeRunId,
+      session.access_token,
+      (next) => {
+        setRun(next);
+        setRuns((prev) => [next, ...prev.filter((r) => r.id !== next.id)]);
+      },
+      controller.signal
+    ).catch((e) => {
+      if (controller.signal.aborted) return;
+      setError(e instanceof Error ? e.message : "Run status stream failed");
+    });
+    return () => controller.abort();
+  }, [activeRunId, session]);
 
   // ----- Clean up screenshot blob -----
   useEffect(() => {

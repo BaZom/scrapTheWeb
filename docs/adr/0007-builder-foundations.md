@@ -3,8 +3,8 @@
 - **Status:** Accepted / in progress
 - **Date:** 2026-06-07
 - **Scope:** `backend/app/selector_generator.py`, `backend/app/page_sessions.py`,
-  `frontend/lib/api.ts`, `frontend/app/components/builder-view.tsx`,
-  `frontend/app/page.tsx`
+  `backend/app/recipes.py`, `frontend/lib/api.ts`,
+  `frontend/app/components/builder-view.tsx`, `frontend/app/page.tsx`
 - **Builds on / closes follow-ups from:** ADR 0001 ("What to read next" backlog).
 
 ADR 0001 shipped the Phase-1 builder UX and ended with four foundational follow-ups
@@ -106,15 +106,63 @@ session exists and is otherwise removed. That one rule also covers sign-out and 
 
 ---
 
+## Decision 3 — Run progress streams over SSE instead of polling
+
+**What:** `GET /api/runs/{id}/events` streams the run as Server-Sent Events — the full
+`RunResponse` on every change — until the run reaches a terminal state. The frontend
+opens it once per run (replacing the 1.5 s `setInterval` poll) and replaces its run
+state wholesale on each frame.
+
+**Why fetch + ReadableStream, not `EventSource`:** the native `EventSource` API cannot
+set request headers, and this API authenticates with Bearer tokens / `X-API-Key` (no
+cookies). The alternatives were a token in the query string — which would leak it into
+access logs in a codebase that otherwise has a log redactor and SSRF guards — or
+consuming the SSE stream with `fetch` + a `ReadableStream` reader, which keeps the normal
+`Authorization` header. We chose the latter; it's a few lines of framing code (split on
+the blank-line delimiter, reassemble `data:` lines) and keeps auth uniform.
+
+**Why stream the whole `RunResponse`:** intermediate "running" frames are tiny (no
+records yet); only the terminal frame carries records/changes. Sending the full object
+means the client just replaces its state — no separate "now fetch the details" round
+trip — for negligible bandwidth.
+
+**Server-side care:**
+- The stream re-reads the run with **short-lived per-poll sessions** and explicitly
+  **closes the request-scoped session** up front, so a minutes-long stream doesn't pin a
+  connection from the pool.
+- It ends on terminal state, on client disconnect (`request.is_disconnected()`), or at a
+  300 s cap (bounds an abandoned/stuck job).
+- Authorization happens once before streaming (404 if the run isn't in the caller's org);
+  per-poll reads re-scope by `organization_id` defensively.
+
+**Effect hygiene on the client:** the effect keys on a derived `activeRunId` (the id only
+while the run is non-terminal), so the stream opens once per run rather than reconnecting
+on every pushed update, and tears down cleanly when the run finishes.
+
+**Alternatives rejected:**
+- *Keep polling, just faster* — more requests, still client-driven, and timestamps stay
+  client-side guesses.
+- *WebSockets* — bidirectional and heavier; run progress is one-way server→client, which
+  is exactly what SSE is for.
+
+**Note on real per-event log lines (deliberately not done):** ADR 0001 Decision 7 wanted
+real log lines over the wire. The run job is short and atomic (render → extract →
+persist), so the client-synthesized log from the run summary already reflects the real
+milestones; having the worker publish per-event logs to Redis adds moving parts for
+little user value on a sub-minute job. Revisit if runs grow into multi-step crawls.
+
+**Concepts to look up:**
+- **Server-Sent Events** framing (`data:` lines, `\n\n` delimiter) and why it fits
+  one-way streaming; **SSE vs. WebSockets vs. long-polling**.
+- **`EventSource` header limitation** and the `fetch` + `ReadableStream` pattern.
+- **Connection lifetime** under streaming responses — why you release the request-scoped
+  DB session and poll with short-lived ones.
+- **Deriving an effect key** (`activeRunId`) to avoid reconnect-per-update churn.
+
+---
+
 ## Still on the backlog (not in this ADR yet)
 
-- **SSE for run progress** — replace the 1.5 s `setInterval` poll with a stream and emit
-  real per-event log lines. Note a real constraint: the native `EventSource` API cannot
-  send an `Authorization` header, and this app authenticates with Bearer tokens (no
-  cookies). So SSE here means either a token in the query string (leaks into logs — bad
-  in a codebase with a log redactor and SSRF guards) or consuming the stream via `fetch`
-  + `ReadableStream` (keeps the header). The latter is the intended approach; documented
-  here so the decision is made deliberately, not by accident.
 - **State machine** — replace the ~40 `useState` flags and the large `builderProps` memo
   in `page.tsx` with a reducer. Highest leverage, highest risk (no frontend test harness
   yet), so it wants its own focused change with manual verification.

@@ -371,6 +371,52 @@ export async function getRun(runId: string, accessToken: string): Promise<Extrac
   return parseApiResponse(response, runSchema);
 }
 
+// Stream a run's state via Server-Sent Events until it reaches a terminal state.
+// We consume the stream with fetch + ReadableStream rather than the native EventSource
+// API specifically because EventSource cannot send an Authorization header, and the API
+// authenticates with Bearer tokens. `onRun` fires with the full run on each change; the
+// returned promise resolves when the stream ends (terminal state, cap, or abort).
+export async function streamRunEvents(
+  runId: string,
+  accessToken: string,
+  onRun: (run: ExtractionRun) => void,
+  signal: AbortSignal
+): Promise<void> {
+  const response = await fetch(`${baseUrl}/api/runs/${runId}/events`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "text/event-stream" },
+    cache: "no-store",
+    signal
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Run stream failed (${response.status})`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line; a frame may carry multiple `data:` lines.
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const data = frame
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim())
+        .join("\n");
+      if (data) {
+        const parsed = runSchema.safeParse(JSON.parse(data));
+        if (parsed.success) onRun(parsed.data);
+        // Non-run frames (e.g. `event: error`) are ignored; the stream simply ends.
+      }
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
+}
+
 export async function downloadRunExport(
   runId: string,
   format: "csv" | "json",

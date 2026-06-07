@@ -241,7 +241,8 @@ foundational follow-ups, in order of leverage:
    *reducer pattern*, *prop drilling vs. context*. *(Backlog — see ADR 0007.)*
 2. **SSE for run progress** — replaces the 1.5 s `setInterval` poll and enables real
    log lines. Look up *Server-Sent Events*, *EventSource*, *long-polling vs.
-   streaming*. *(Backlog — see ADR 0007, incl. the EventSource-auth constraint.)*
+   streaming*. *(Done — ADR 0007 Decision 3, via fetch+ReadableStream; real per-event
+   worker logs deliberately deferred.)*
 3. **Selector endpoint returns matched nodeIds** — retires the Decision 4 heuristic.
    *(Done — ADR 0007 Decision 1.)*
 4. **Draft persistence** — sessions are ephemeral; a refresh loses mapping work.
