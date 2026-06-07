@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import {
   type AuthSession,
@@ -31,6 +31,12 @@ import {
   runRecipe
 } from "@/lib/api";
 
+import {
+  type BuilderDraft,
+  builderReducer,
+  initialBuilderState
+} from "@/lib/builder-reducer";
+
 import { AccountPanel } from "./components/account-panels";
 import { AppShell } from "./components/app-shell";
 import { AuthView, type AuthMode } from "./components/auth-view";
@@ -55,21 +61,9 @@ const runTerminalStatuses = new Set(["completed", "failed"]);
 const builderDraftKey = "scraptheweb.builder-draft.v1";
 
 type StoredSession = Pick<AuthSession, "access_token" | "refresh_token">;
-
-// Only the state needed to reconstruct the canvas + mapping. Transient results
-// (preview/run/savedRecipe) and the blob screenshot URL are intentionally excluded —
-// the screenshot is re-fetched from pageSession.screenshotUrl on restore.
-type BuilderDraft = {
-  renderUrl: string;
-  recipeName: string;
-  recipeShape: "list" | "single";
-  pickMode: "container" | "field";
-  pageSession: PageSession;
-  selectedNode: DomNode | null;
-  selectorResult: SelectorResult | null;
-  fields: PreviewField[];
-  fieldSamples: Record<string, string>;
-};
+// BuilderDraft (the persisted snapshot shape) is defined alongside the reducer so the two
+// can't drift; only the canvas + mapping is stored — transient results and the blob
+// screenshot URL are excluded and the screenshot is re-fetched on restore.
 
 export default function Home() {
   const [mode, setMode] = useState<AuthMode>("signin");
@@ -80,28 +74,35 @@ export default function Home() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [runs, setRuns] = useState<ExtractionRun[]>([]);
-  const [renderUrl, setRenderUrl] = useState("https://news.ycombinator.com/news");
-  const [pageSession, setPageSession] = useState<PageSession | null>(null);
+  // Builder flow state lives in one reducer (see lib/builder-reducer.ts). Destructured to
+  // the same names the rest of this component already reads, so only writes change here.
+  const [builder, dispatch] = useReducer(builderReducer, initialBuilderState);
+  const {
+    renderUrl,
+    pageSession,
+    selectedNode,
+    selectorResult,
+    recipeShape,
+    pickMode,
+    fieldNode,
+    fieldSelector,
+    fieldName,
+    fieldExtract,
+    fieldAttribute,
+    fields,
+    fieldSamples,
+    preview,
+    recipeName,
+    savedRecipe,
+    run,
+    imageSize
+  } = builder;
+  // Kept outside the reducer: the screenshot blob URL (side-effect lifecycle), the live
+  // field sample (derived by an effect), and the canvas view toggle.
   const [screenshotObjectUrl, setScreenshotObjectUrl] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<DomNode | null>(null);
-  const [selectorResult, setSelectorResult] = useState<SelectorResult | null>(null);
-  const [recipeShape, setRecipeShape] = useState<"list" | "single">("list");
-  const [pickMode, setPickMode] = useState<"container" | "field">("container");
-  const [fieldNode, setFieldNode] = useState<DomNode | null>(null);
-  const [fieldSelector, setFieldSelector] = useState<SelectorResult | null>(null);
-  const [fieldName, setFieldName] = useState("title");
-  const [fieldExtract, setFieldExtract] = useState<ExtractType>("text");
-  const [fieldAttribute, setFieldAttribute] = useState("");
-  const [fields, setFields] = useState<PreviewField[]>([]);
   const [fieldSample, setFieldSample] = useState<string | null>(null);
   const [fieldSampleBusy, setFieldSampleBusy] = useState(false);
-  const [fieldSamples, setFieldSamples] = useState<Record<string, string>>({});
-  const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [recipeName, setRecipeName] = useState("");
-  const [savedRecipe, setSavedRecipe] = useState<Recipe | null>(null);
-  const [run, setRun] = useState<ExtractionRun | null>(null);
   const [pickerView, setPickerView] = useState<"overlays" | "nodes">("overlays");
-  const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [renderBusy, setRenderBusy] = useState(false);
@@ -137,15 +138,7 @@ export default function Home() {
     try {
       const draft = JSON.parse(raw) as BuilderDraft;
       if (!draft.pageSession?.sessionId) throw new Error("malformed draft");
-      setRenderUrl(draft.renderUrl);
-      setRecipeName(draft.recipeName);
-      setRecipeShape(draft.recipeShape);
-      setPickMode(draft.pickMode);
-      setPageSession(draft.pageSession);
-      setSelectedNode(draft.selectedNode);
-      setSelectorResult(draft.selectorResult);
-      setFields(draft.fields);
-      setFieldSamples(draft.fieldSamples);
+      dispatch({ type: "draft_restored", draft });
       setRestoredSessionId(draft.pageSession.sessionId);
       setActiveView("builder");
     } catch {
@@ -224,7 +217,7 @@ export default function Home() {
 
     const applyRunUpdate = (next: ExtractionRun) => {
       latestTerminal = runTerminalStatuses.has(next.status);
-      setRun(next);
+      dispatch({ type: "run_updated", run: next });
       setRuns((prev) => [next, ...prev.filter((r) => r.id !== next.id)]);
     };
 
@@ -410,21 +403,9 @@ export default function Home() {
   }
 
   function resetBuilderState() {
-    setPageSession(null);
+    dispatch({ type: "reset" });
     setScreenshotObjectUrl(null);
-    setSelectedNode(null);
-    setSelectorResult(null);
-    setFieldNode(null);
-    setFieldSelector(null);
     setFieldSample(null);
-    setFieldSamples({});
-    setFields([]);
-    setPreview(null);
-    setSavedRecipe(null);
-    setRun(null);
-    setPickMode("container");
-    setRecipeShape("list");
-    setImageSize(null);
   }
 
   // ----- Builder handlers -----
@@ -437,20 +418,13 @@ export default function Home() {
     resetBuilderState();
     try {
       const rendered = await createPageSession(renderUrl, session.access_token);
-      setPageSession(rendered);
-      // Auto-detect page shape. A *strong* repeated candidate → list flow; otherwise
-      // single-record flow (the whole page body is the record). Detail pages have
-      // incidental repeats (spec lists, galleries) that score low, so we gate on score
-      // rather than mere presence — and the user can override via the shape toggle.
-      const strongCandidate = rendered.containerCandidates.some((c) => c.score >= 40);
-      if (strongCandidate) {
-        setRecipeShape("list");
-      } else {
-        setRecipeShape("single");
-        setSelectorResult({ selector: "body", matchCount: 1, strategy: "single", matchedNodeIds: [] });
-        setPickMode("field");
-      }
-      setRecipeName((current) => current.trim() || suggestedRecipeName(renderUrl, rendered.title));
+      // The reducer detects shape (strong candidate → list, else single + body selector)
+      // and keeps a user-entered name, falling back to the suggestion.
+      dispatch({
+        type: "render_succeeded",
+        pageSession: rendered,
+        suggestedName: suggestedRecipeName(renderUrl, rendered.title)
+      });
       if (rendered.screenshotUrl) {
         const objectUrl = await fetchScreenshot(rendered.screenshotUrl, session.access_token);
         setScreenshotObjectUrl((current) => {
@@ -467,23 +441,14 @@ export default function Home() {
 
   async function handleNodeSelect(node: DomNode) {
     if (!session || !pageSession) return;
-    setSelectedNode(node);
-    setSelectorResult(null);
-    setFieldNode(null);
-    setFieldSelector(null);
-    setFields([]);
-    setPreview(null);
-    setSavedRecipe(null);
-    setRun(null);
-    setPickMode("container");
+    dispatch({ type: "container_selecting", node });
     setSelectorBusy(true);
     setError(null);
     try {
       const result = await generateSelector(pageSession.sessionId, node.nodeId, session.access_token);
-      setSelectorResult(result);
       // Auto-advance: once the container is locked in, the next action is always to map
-      // fields inside it, so flip the picker into Field mode for the user.
-      setPickMode("field");
+      // fields inside it, so the reducer flips the picker into Field mode.
+      dispatch({ type: "container_selector_resolved", result });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Selector generation failed");
     } finally {
@@ -493,8 +458,7 @@ export default function Home() {
 
   async function handleFieldNodeSelect(node: DomNode) {
     if (!session || !pageSession || !selectorResult) return;
-    setFieldNode(node);
-    setFieldSelector(null);
+    dispatch({ type: "field_selecting", node });
     setSelectorBusy(true);
     setError(null);
     try {
@@ -511,8 +475,7 @@ export default function Home() {
               session.access_token,
               selectorResult.selector
             );
-      setFieldSelector(result);
-      if (!fieldName) setFieldName(defaultFieldName(node));
+      dispatch({ type: "field_selector_resolved", result, defaultName: defaultFieldName(node) });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Field selector failed");
     } finally {
@@ -522,68 +485,22 @@ export default function Home() {
 
   function addField() {
     if (!fieldSelector) return;
-    const name = fieldName.trim();
-    if (!name) {
+    if (!fieldName.trim()) {
       setError("Field name is required");
       return;
     }
-    const next: PreviewField = {
-      name,
-      selector: fieldSelector.selector,
-      extract: fieldExtract,
-      ...(fieldExtract === "attribute" ? { attribute: fieldAttribute.trim() } : {})
-    };
-    setFields((current) => [...current.filter((f) => f.name !== name), next]);
-    // Remember the live sample so the saved field card can keep showing a value.
-    if (fieldSample !== null) setFieldSamples((current) => ({ ...current, [name]: fieldSample }));
-    setFieldName("");
-    setFieldSelector(null);
-    setFieldNode(null);
+    // The reducer builds the field, dedupes by name, captures the live sample, and
+    // clears the editor; we just hand it the sample (which lives outside the reducer).
+    dispatch({ type: "field_added", sample: fieldSample });
     setFieldSample(null);
-    setPreview(null);
-    setSavedRecipe(null);
-    setRun(null);
   }
 
   // Stepper navigation: clicking an earlier step rewinds the workflow by clearing
-  // everything downstream of it. `currentStep` is derived from this state, so the
-  // stepper updates itself once the relevant slices are cleared. Steps:
-  // 0 Load URL · 1 Select container · 2 Map fields · 3 Preview · 4 Save & run.
+  // everything downstream of it (the reducer owns the per-shape clearing rules).
+  // `currentStep` is derived from the cleared slices, so the stepper updates itself.
   function handleStepNavigate(target: number) {
-    if (recipeShape === "single") {
-      // Single steps: 0 Load · 1 Choose details · 2 Preview · 3 Save. The body
-      // "container" is kept throughout; going back to details clears details forward.
-      if (target <= 1) {
-        setFields([]);
-        setFieldSamples({});
-        setFieldNode(null);
-        setFieldSelector(null);
-        setFieldSample(null);
-        setPreview(null);
-      }
-      setSavedRecipe(null);
-      setRun(null);
-      return;
-    }
-    if (target <= 1) {
-      setSelectedNode(null);
-      setSelectorResult(null);
-      setFieldNode(null);
-      setFieldSelector(null);
-      setFieldSample(null);
-      setFields([]);
-      setFieldSamples({});
-      setPickMode("container");
-    } else if (target === 2) {
-      setFieldNode(null);
-      setFieldSelector(null);
-      setFieldSample(null);
-      setPickMode("field");
-    }
-    // Landing on "Preview" (3) keeps the preview table; earlier steps clear it too.
-    if (target <= 2) setPreview(null);
-    setSavedRecipe(null);
-    setRun(null);
+    dispatch({ type: "step_navigated", target });
+    setFieldSample(null);
   }
 
   async function runPreview() {
@@ -591,9 +508,13 @@ export default function Home() {
     setPreviewBusy(true);
     setError(null);
     try {
-      setPreview(
-        await previewPageSession(pageSession.sessionId, selectorResult.selector, fields, session.access_token)
+      const result = await previewPageSession(
+        pageSession.sessionId,
+        selectorResult.selector,
+        fields,
+        session.access_token
       );
+      dispatch({ type: "preview_succeeded", preview: result });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Preview extraction failed");
     } finally {
@@ -619,7 +540,7 @@ export default function Home() {
         session.access_token,
         recipeShape === "single" ? "single" : "listing"
       );
-      setSavedRecipe(recipe);
+      dispatch({ type: "recipe_saved", recipe });
       setRecipes((prev) => [recipe, ...prev.filter((r) => r.id !== recipe.id)]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Recipe save failed");
@@ -634,10 +555,10 @@ export default function Home() {
     setError(null);
     try {
       const recipe = recipes.find((c) => c.id === recipeId);
-      if (recipe) setSavedRecipe(recipe);
+      if (recipe) dispatch({ type: "recipe_saved", recipe });
       const created = await runRecipe(recipeId, session.access_token);
       const firstRead = await getRun(created.runId, session.access_token);
-      setRun(firstRead);
+      dispatch({ type: "run_updated", run: firstRead });
       setRuns((prev) => [firstRead, ...prev.filter((r) => r.id !== firstRead.id)]);
       setActiveView("builder");
     } catch (e) {
@@ -676,7 +597,7 @@ export default function Home() {
   const builderProps = useMemo(
     () => ({
       url: renderUrl,
-      onUrlChange: setRenderUrl,
+      onUrlChange: (url: string) => dispatch({ type: "url_changed", url }),
       onLoadPage: handleRenderSubmit,
       pageSession,
       screenshotObjectUrl,
@@ -685,19 +606,21 @@ export default function Home() {
       selectorBusy,
       recipeShape,
       pickMode,
-      onPickModeChange: setPickMode,
+      onPickModeChange: (mode: "container" | "field") => dispatch({ type: "pick_mode_changed", mode }),
       pickerView,
       onPickerViewChange: setPickerView,
       fieldNode,
       fieldSelector,
       fieldName,
-      onFieldNameChange: setFieldName,
+      onFieldNameChange: (name: string) => dispatch({ type: "field_name_changed", name }),
       fieldExtract,
-      onFieldExtractChange: setFieldExtract,
+      onFieldExtractChange: (extract: ExtractType) =>
+        dispatch({ type: "field_extract_changed", extract }),
       fieldAttribute,
-      onFieldAttributeChange: setFieldAttribute,
+      onFieldAttributeChange: (attribute: string) =>
+        dispatch({ type: "field_attribute_changed", attribute }),
       fields,
-      onFieldsChange: setFields,
+      onFieldsChange: (next: PreviewField[]) => dispatch({ type: "fields_changed", fields: next }),
       onAddField: addField,
       fieldSample,
       fieldSampleBusy,
@@ -707,7 +630,7 @@ export default function Home() {
       previewBusy,
       onRunPreview: runPreview,
       recipeName,
-      onRecipeNameChange: setRecipeName,
+      onRecipeNameChange: (name: string) => dispatch({ type: "recipe_name_changed", name }),
       savedRecipe,
       recipeBusy,
       onSaveRecipe: handleSaveRecipe,
@@ -717,7 +640,8 @@ export default function Home() {
       exportBusy,
       onDownloadExport: handleDownloadExport,
       imageSize,
-      onImageLoad: setImageSize,
+      onImageLoad: (size: { width: number; height: number }) =>
+        dispatch({ type: "image_loaded", size }),
       renderBusy,
       error,
       onNodeSelect: handleNodeSelect,
@@ -821,7 +745,7 @@ export default function Home() {
           error={workspaceError}
           loading={workspaceBusy}
           onOpenRun={(selected) => {
-            setRun(selected);
+            dispatch({ type: "run_updated", run: selected });
             setActiveView("builder");
           }}
           recipes={recipes}
