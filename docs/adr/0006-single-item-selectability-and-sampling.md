@@ -102,6 +102,22 @@ content; one regex route means non-matching requests never round-trip to Python.
 ~3.35s → **~2.74s** on autoscout (mostly first-party; ad-heavy sites save more). Behind
 `RENDER_BLOCK_ADS` so it can be switched off if a site misbehaves.
 
+## 8. Wait for the DOM to re-stabilize after dismissing consent (empty-preview fix)
+
+**Problem.** "Preview records" extracts from the saved `page.html`. On sites whose consent
+CMP **tears the page down and re-hydrates it** ~1–2s after "reject all" (kleinanzeigen
+collapses to a ~40-element shell, then rebuilds the listings), `page.content()` was
+captured *before* the rebuild — so the persisted HTML was the empty shell. The screenshot
+and picker (taken later, once re-hydrated) showed data, but preview/extraction found
+nothing.
+
+**Fix.** After a consent dismissal, `_wait_for_dom_stable` polls the live element count and
+snapshots only once it settles (`networkidle` is unreliable on these ad/SPA pages). A
+failing `page.evaluate` means the execution context was just destroyed — i.e. the page is
+rebuilding *right now* — so it resets the streak and keeps polling rather than bailing;
+bailing snapshotted the half-built shell on slower re-hydrations. Covered by
+`tests/test_worker_dom_stable.py` (fake page, no browser). Generic — no per-site logic.
+
 ## Concepts to look up
 - **Budgeted DOM serialization** — why *which* nodes you keep matters more than how many,
   and why the right baseline differs for list vs single pages.
