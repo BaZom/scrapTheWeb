@@ -284,7 +284,7 @@ export default function Home() {
         setRecipeShape("list");
       } else {
         setRecipeShape("single");
-        setSelectorResult({ selector: "body", matchCount: 1, strategy: "single" });
+        setSelectorResult({ selector: "body", matchCount: 1, strategy: "single", matchedNodeIds: [] });
         setPickMode("field");
       }
       setRecipeName((current) => current.trim() || suggestedRecipeName(renderUrl, rendered.title));

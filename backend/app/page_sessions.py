@@ -118,6 +118,9 @@ class SelectorResponse(BaseModel):
     selector: str
     matchCount: int
     strategy: str
+    # Exact domNodes the selector matches, so the builder outlines the real set
+    # rather than approximating it from tag+class signatures (ADR 0007).
+    matchedNodeIds: list[str] = Field(default_factory=list)
 
 
 ExtractType = Literal["text", "href", "src", "attribute", "html"]

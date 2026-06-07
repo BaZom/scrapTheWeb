@@ -96,7 +96,11 @@ const pageSessionSchema = z.object({
 const selectorSchema = z.object({
   selector: z.string(),
   matchCount: z.number(),
-  strategy: z.string()
+  strategy: z.string(),
+  // Exact nodeIds the selector matches (backend-authoritative); the builder outlines
+  // these instead of guessing from tag+class signatures. Defaults to [] for older
+  // payloads and the synthetic single-record `body` selector.
+  matchedNodeIds: z.array(z.string()).default([])
 });
 
 const extractTypeSchema = z.enum(["text", "href", "src", "attribute", "html"]);

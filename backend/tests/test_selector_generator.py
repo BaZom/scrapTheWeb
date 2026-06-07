@@ -58,3 +58,24 @@ def test_generates_node_selector_within_container() -> None:
     )
     assert result["selector"]
     assert result["matchCount"] >= 1
+
+
+def test_container_selector_returns_every_matched_node_id() -> None:
+    # The UI outlines exactly these nodes, so they must be the full repeated set,
+    # not an approximation, and must agree with matchCount.
+    nodes = _build_grid(3)
+    result = generate_selector(nodes, "card-1", "container")
+    assert set(result["matchedNodeIds"]) == {"card-0", "card-1", "card-2"}
+    assert len(result["matchedNodeIds"]) == result["matchCount"]
+
+
+def test_node_selector_returns_matched_ids_across_containers() -> None:
+    # A relative field selector matches one cell per card; matchedNodeIds should
+    # cover the cell in every container, so the column outlines across all cards.
+    nodes = _build_grid(3)
+    for i in range(3):
+        nodes.append(
+            _node(f"title-{i}", tag="h3", text="Title", parentNodeId=f"card-{i}", classes=["title"])
+        )
+    result = generate_selector(nodes, "title-0", "node", container_selector="article.product_pod")
+    assert set(result["matchedNodeIds"]) == {"title-0", "title-1", "title-2"}

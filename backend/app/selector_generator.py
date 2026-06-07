@@ -52,10 +52,14 @@ def generate_selector(
         selector = _fallback_path(selected, node_by_id, nodes)
         strategy = "fallback_path"
 
+    matched = _matching_nodes(nodes, selector)
     return {
         "selector": selector,
-        "matchCount": count_matches(nodes, selector),
+        "matchCount": len(matched),
         "strategy": strategy,
+        # The exact nodes this selector matches, so the UI can outline the whole set
+        # instead of approximating it client-side (ADR 0001 Decision 4 → ADR 0007).
+        "matchedNodeIds": [node["nodeId"] for node in matched],
     }
 
 
@@ -98,7 +102,19 @@ def _generate_relative_selector(
         strategy = "relative_fallback_path"
         match_count = len(_matching_descendants(selected_container, nodes, selector))
 
-    return {"selector": selector, "matchCount": match_count, "strategy": strategy}
+    # The relative selector matches one cell per container; surface every match across
+    # all containers so the UI can outline the full extracted column (ADR 0007).
+    matched_ids = [
+        node["nodeId"]
+        for container in container_nodes
+        for node in _matching_descendants(container, nodes, selector)
+    ]
+    return {
+        "selector": selector,
+        "matchCount": match_count,
+        "strategy": strategy,
+        "matchedNodeIds": matched_ids,
+    }
 
 
 def count_matches(dom_nodes: list[dict[str, Any]], selector: str) -> int:

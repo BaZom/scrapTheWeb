@@ -132,17 +132,19 @@ export function BuilderView(props: BuilderProps) {
   const [bottomTab, setBottomTab] = useState<"preview" | "changes" | "logs">("preview");
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
-  // Client-side approximation of which nodes the container selector matches, so we can
-  // outline the whole repeated set on the screenshot. We match by tag + class signature,
-  // which mirrors how the listing selector is generated. The authoritative count still
-  // comes from the backend's `selectorResult.matchCount`; this is purely a visual aid.
-  // (Proper fix: have the selector endpoint return the matched nodeIds.)
+  // Which nodes the container selector matches, so we can outline the whole repeated set
+  // on the screenshot. These now come straight from the backend (`selectorResult
+  // .matchedNodeIds`) — the same selector engine that produces `matchCount` — so the
+  // outline is exact, not a guess. We fall back to a tag+class signature only when the
+  // backend returned none (e.g. the synthetic `body` selector on single-record pages).
   const matchedNodeIds = useMemo(() => {
+    const authoritative = props.selectorResult?.matchedNodeIds ?? [];
+    if (authoritative.length > 0) return new Set(authoritative);
     if (!props.selectedNode || !props.pageSession) return new Set<string>();
     const sig = (n: DomNode) => `${n.tag}|${[...n.classes].sort().join(".")}`;
     const target = sig(props.selectedNode);
     return new Set(props.pageSession.domNodes.filter((n) => sig(n) === target).map((n) => n.nodeId));
-  }, [props.selectedNode, props.pageSession]);
+  }, [props.selectorResult, props.selectedNode, props.pageSession]);
 
   // Semantic listing-card candidates from the backend (Container mode's primary layer).
   const candidates = useMemo(
