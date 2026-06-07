@@ -130,7 +130,8 @@ selectors using `nth-child`, attribute, or structural rules). We deliberately di
 
 **Proper fix (Phase 2/3):** have the `/selector` endpoint return the matched
 `nodeId`s alongside `matchCount`, and highlight exactly those. Then the heuristic
-goes away.
+goes away. **Done in ADR 0007 Decision 1** — the heuristic now survives only as a
+fallback for the synthetic `body` selector on single-record pages.
 
 **Alternatives rejected:**
 - *Ship a client-side CSS selector matcher* — we only have a flat node list with
@@ -237,10 +238,12 @@ foundational follow-ups, in order of leverage:
 
 1. **State machine (`useReducer`/XState)** — replaces the ~28 `useState` flags and
    the ~40-prop `builderProps` memo in `page.tsx`. Look up *finite state machines*,
-   *reducer pattern*, *prop drilling vs. context*.
+   *reducer pattern*, *prop drilling vs. context*. *(Backlog — see ADR 0007.)*
 2. **SSE for run progress** — replaces the 1.5 s `setInterval` poll and enables real
    log lines. Look up *Server-Sent Events*, *EventSource*, *long-polling vs.
-   streaming*.
+   streaming*. *(Backlog — see ADR 0007, incl. the EventSource-auth constraint.)*
 3. **Selector endpoint returns matched nodeIds** — retires the Decision 4 heuristic.
+   *(Done — ADR 0007 Decision 1.)*
 4. **Draft persistence** — sessions are ephemeral; a refresh loses mapping work.
    Look up *optimistic UI* and *local-first / autosave* patterns.
+   *(Done — ADR 0007 Decision 2.)*
