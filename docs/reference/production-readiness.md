@@ -4,6 +4,20 @@ What the app does **not** yet do, and the concrete work to do before/at producti
 Grouped by area; not in strict priority order. (Decision history for shipped items is in
 `docs/adr/`.)
 
+## Known bugs (open)
+- **"Add missed items" still misbehaves.** Earlier fixes shipped (freeze already-detected
+  items; the nudge switches to Item mode — ADR 0009 §1 and the freeze commit), but a problem
+  is still observed in manual testing. Needs a concrete repro and a fix — re-check the
+  container-mode click routing, the frozen/clickable split, and re-inference on each added
+  example.
+
+## Planned UX polish (next)
+- **Single-item (detail) page design & UX.** The single-page flow (no card; click values
+  page-wide) is functional but rougher than the list flow — give it a proper layout/affordance
+  pass so it reads as deliberately as list mode.
+- **Icon & spacing pass.** Tighten icon sizing/pacing, spacing rhythm, and visual consistency
+  across the builder (buttons, badges, the fields table, the bottom panel).
+
 ## Builder UX & recipe quality
 - **Server-side recipe drafts.** Drafts are `localStorage` only (per-tab, per-device). A
   server draft (schema + endpoints) would survive device switches and team handoff.
