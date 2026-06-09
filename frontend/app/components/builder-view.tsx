@@ -109,9 +109,6 @@ export type BuilderProps = {
   containerExampleIds: string[];
   onAddItemExample: (node: DomNode) => void;
   onResetItemExamples: () => void;
-  // Field teach-by-example: click the same detail in another card to fix that column.
-  fieldExampleIds: string[];
-  onAddFieldExample: (node: DomNode) => void;
 };
 
 function currentStep(props: BuilderProps) {

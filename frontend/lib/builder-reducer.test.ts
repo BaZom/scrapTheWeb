@@ -387,7 +387,6 @@ describe("teach-by-example selection", () => {
   it("picking an item seeds the example list with that node", () => {
     const s = builderReducer(initialBuilderState, { type: "container_selecting", node: node("c1") });
     expect(s.containerExampleIds).toEqual(["c1"]);
-    expect(s.fieldExampleIds).toEqual([]);
   });
 
   it("container_example_added appends, keeps fields, clears preview", () => {
@@ -413,18 +412,10 @@ describe("teach-by-example selection", () => {
     expect(s.pickMode).toBe("container");
   });
 
-  it("picking a field seeds the field example list", () => {
+  it("picking a field clears any prior field selector", () => {
     const s = builderReducer(deepListState(), { type: "field_selecting", node: node("f1") });
-    expect(s.fieldExampleIds).toEqual(["f1"]);
-  });
-
-  it("field_example_added appends (no-op on duplicate); field_selector_inferred swaps the selector", () => {
-    const seeded = { ...deepListState(), fieldExampleIds: ["f1"] };
-    const added = builderReducer(seeded, { type: "field_example_added", node: node("f2") });
-    expect(added.fieldExampleIds).toEqual(["f1", "f2"]);
-    expect(builderReducer(added, { type: "field_example_added", node: node("f2") })).toBe(added);
-    const s = builderReducer(added, { type: "field_selector_inferred", result: inferred });
-    expect(s.fieldSelector).toEqual(inferred);
+    expect(s.fieldNode?.nodeId).toBe("f1");
+    expect(s.fieldSelector).toBeNull();
   });
 });
 

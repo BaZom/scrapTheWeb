@@ -28,10 +28,9 @@ export type BuilderState = {
   pageSession: PageSession | null;
   selectedNode: DomNode | null;
   selectorResult: SelectorResult | null;
-  // Teach-by-example (ADR 0009): the node IDs the user clicked as item / field examples.
-  // The selector is inferred to cover all of them; the first pick seeds the list.
+  // Teach-by-example (ADR 0009): the node IDs the user clicked as item examples, used to
+  // infer an item selector that covers all of them (add-missed-items). First pick seeds it.
   containerExampleIds: string[];
-  fieldExampleIds: string[];
   recipeShape: RecipeShape;
   pickMode: PickMode;
   fieldNode: DomNode | null;
@@ -71,8 +70,6 @@ export type BuilderAction =
   | { type: "container_selector_inferred"; result: SelectorResult }
   | { type: "field_selecting"; node: DomNode }
   | { type: "field_selector_resolved"; result: SelectorResult; defaultName: string }
-  | { type: "field_example_added"; node: DomNode }
-  | { type: "field_selector_inferred"; result: SelectorResult }
   | { type: "field_name_changed"; name: string }
   | { type: "field_extract_changed"; extract: ExtractType }
   | { type: "field_attribute_changed"; attribute: string }
@@ -107,7 +104,6 @@ export const initialBuilderState: BuilderState = {
   selectedNode: null,
   selectorResult: null,
   containerExampleIds: [],
-  fieldExampleIds: [],
   recipeShape: "list",
   pickMode: "container",
   fieldNode: null,
@@ -148,7 +144,6 @@ function clearedFlow(state: BuilderState): BuilderState {
     selectedNode: null,
     selectorResult: null,
     containerExampleIds: [],
-    fieldExampleIds: [],
     fieldNode: null,
     fieldSelector: null,
     fieldSamples: {},
@@ -191,7 +186,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         selectedNode: action.node,
         selectorResult: null,
         containerExampleIds: [action.node.nodeId],
-        fieldExampleIds: [],
         fieldNode: null,
         fieldSelector: null,
         fields: [],
@@ -224,7 +218,7 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
       return { ...state, selectorResult: action.result };
 
     case "field_selecting":
-      return { ...state, fieldNode: action.node, fieldSelector: null, fieldExampleIds: [action.node.nodeId] };
+      return { ...state, fieldNode: action.node, fieldSelector: null };
 
     case "field_selector_resolved":
       return {
@@ -232,16 +226,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         fieldSelector: action.result,
         fieldName: state.fieldName ? state.fieldName : action.defaultName
       };
-
-    case "field_example_added": {
-      // Teach-by-example (ADR 0009): another example of the same field in a different card,
-      // to correct the relative selector. No-op if already an example.
-      if (state.fieldExampleIds.includes(action.node.nodeId)) return state;
-      return { ...state, fieldExampleIds: [...state.fieldExampleIds, action.node.nodeId] };
-    }
-
-    case "field_selector_inferred":
-      return { ...state, fieldSelector: action.result };
 
     case "field_name_changed":
       return { ...state, fieldName: action.name };
@@ -272,7 +256,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         fieldName: "",
         fieldSelector: null,
         fieldNode: null,
-        fieldExampleIds: [],
         preview: null,
         savedRecipe: null,
         run: null
@@ -293,7 +276,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         fieldName: "",
         fieldSelector: null,
         fieldNode: null,
-        fieldExampleIds: [],
         preview: null,
         savedRecipe: null,
         run: null
@@ -319,7 +301,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         ...shapeFlow(action.shape),
         selectedNode: null,
         containerExampleIds: [],
-        fieldExampleIds: [],
         fieldNode: null,
         fieldSelector: null,
         fields: [],
@@ -363,7 +344,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         selectorResult: action.draft.selectorResult,
         // Re-seed the item example list from the restored pick so refine works post-reload.
         containerExampleIds: action.draft.selectedNode ? [action.draft.selectedNode.nodeId] : [],
-        fieldExampleIds: [],
         fields: action.draft.fields,
         fieldSamples: action.draft.fieldSamples
       };
@@ -390,7 +370,6 @@ function stepNavigated(state: BuilderState, target: number): BuilderState {
             fieldSamples: {},
             fieldNode: null,
             fieldSelector: null,
-            fieldExampleIds: [],
             preview: null
           }
         : state;
@@ -404,7 +383,6 @@ function stepNavigated(state: BuilderState, target: number): BuilderState {
       selectedNode: null,
       selectorResult: null,
       containerExampleIds: [],
-      fieldExampleIds: [],
       fieldNode: null,
       fieldSelector: null,
       fields: [],
@@ -412,7 +390,7 @@ function stepNavigated(state: BuilderState, target: number): BuilderState {
       pickMode: "container"
     };
   } else if (target === 2) {
-    next = { ...next, fieldNode: null, fieldSelector: null, fieldExampleIds: [], pickMode: "field" };
+    next = { ...next, fieldNode: null, fieldSelector: null, pickMode: "field" };
   }
   if (target <= 2) next = { ...next, preview: null };
   return { ...next, savedRecipe: null, run: null };
