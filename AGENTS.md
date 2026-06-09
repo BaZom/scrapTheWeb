@@ -35,8 +35,9 @@ pattern. Do not add code-shaped inputs to the default builder UI.
 - **Do NOT add a `Co-Authored-By` / agent trailer** to commit messages.
 - **Pure logic must have tests** (the reducer, the selector engine). Components/full flows are
   verified by running the stack (a jsdom Vitest harness exists for future component tests).
-- `frontend/package-lock.json` is intentionally untracked; deps are exact-pinned in
-  `package.json`. `scratch/` and `IMPLEMENTATION_STATUS.md` are gitignored.
+- `frontend/package-lock.json` **is committed** — it locks the full transitive dependency
+  tree + integrity hashes for reproducible installs (exact pins in `package.json` only cover
+  direct deps). `scratch/` and `IMPLEMENTATION_STATUS.md` are gitignored.
 - After `next lint` rewrites `frontend/next-env.d.ts` (it has an intentional custom comment),
   restore it: `git checkout -- frontend/next-env.d.ts`.
 
