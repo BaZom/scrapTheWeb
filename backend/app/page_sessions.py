@@ -24,7 +24,12 @@ from app.observability import PAGE_RENDER_REQUEST_COUNTER
 from app.page_html_cache import PageHtmlCache
 from app.recipe_runner import extract_preview_rows
 from app.resources import make_s3_client
-from app.selector_generator import SelectorMode, generate_selector, infer_selector
+from app.selector_generator import (
+    SelectorMode,
+    generate_selector,
+    infer_selector,
+    preview_from_snapshot,
+)
 from app.ssrf import validate_public_render_url
 
 logger = structlog.get_logger(__name__)
@@ -159,6 +164,33 @@ class PreviewResponse(BaseModel):
 
     rows: list[dict[str, str]]
     rowCount: int
+
+
+class SnapshotPick(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    # A field the user selected (table tick or screenshot click). The backend generates its
+    # selector and reads its value from the render snapshot (ADR 0009).
+    nodeId: str = Field(min_length=1, max_length=80)
+    extract: ExtractType
+    name: str = Field(min_length=1, max_length=64)
+
+
+class SnapshotPreviewRequest(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    # "body" (or empty) ⇒ single-record page; otherwise the chosen item selector.
+    containerSelector: str = Field(min_length=1, max_length=512)
+    picks: list[SnapshotPick] = Field(min_length=1, max_length=20)
+
+
+class SnapshotPreviewResponse(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    rows: list[dict[str, str]]
+    rowCount: int
+    # The generated selectors, so the caller can save them as the recipe's fields.
+    fields: list[PreviewField]
 
 
 async def _primary_membership(user: User, session: AsyncSession) -> Membership:
@@ -476,6 +508,34 @@ async def page_session_preview(
         [field.model_dump() for field in payload.fields],
     )
     return PreviewResponse(rows=rows, rowCount=len(rows))
+
+
+@router.post("/{session_id}/preview/snapshot", response_model=SnapshotPreviewResponse)
+async def page_session_preview_snapshot(
+    session_id: UUID,
+    payload: SnapshotPreviewRequest,
+    request: Request,
+    user: Annotated[User, Depends(current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> SnapshotPreviewResponse:
+    # Fast preview straight from the render snapshot (ADR 0009): no S3 fetch, no HTML
+    # re-parse. Generates each picked field's selector and reads its value from domNodes,
+    # over every matched item — enough to build + verify a recipe. The saved run still
+    # extracts from freshly-fetched HTML (recipe_runner), where full fidelity matters.
+    await _org_scoped_page_session(session_id, user, session)
+    session_payload = await _load_page_session_payload(request, session_id)
+    raw_nodes = session_payload.get("domNodes", [])
+    if not isinstance(raw_nodes, list):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Page session DOM payload is invalid",
+        )
+    result = preview_from_snapshot(
+        raw_nodes, payload.containerSelector, [pick.model_dump() for pick in payload.picks]
+    )
+    return SnapshotPreviewResponse(
+        rows=result["rows"], rowCount=len(result["rows"]), fields=result["fields"]
+    )
 
 
 @router.get("/{session_id}/screenshot", name="page_session_screenshot")

@@ -274,6 +274,35 @@ candidate so it won't return on the next preview. Adding stays via the selection
 screenshot. Field names are deduped in the component (`selectedFieldPicks`) so the committed
 column name maps back to its candidate for the untick.
 
+### Fast preview from the render snapshot (not a re-parse)
+
+"Preview records" was slow because it (a) generated one selector per field (N round-trips)
+and (b) **re-parsed the entire page HTML** on the backend every time (the ADR 0008 cache
+stores raw HTML, not the parsed tree). Yet the render already captured every element's
+text/href/src into `domNodes`, which lives in the browser and in Redis — so for *building and
+verifying* a recipe against this one example page, the data is already available.
+
+**Decision.** Preview extracts straight from the snapshot. A single endpoint
+`POST /{id}/preview/snapshot` takes the selected picks (`{nodeId, extract, name}`),
+`preview_from_snapshot` (in `selector_generator.py`, reusing the matcher that already
+produces the match counts) generates each field's selector and reads its value from
+`domNodes` over every matched item, and returns `{rows, fields}`. **One round-trip, no S3
+fetch, no HTML parse, no N selector calls.** The frontend commits the returned fields and
+shows the rows in the bottom panel.
+
+**Fidelity tradeoff (deliberate, accepted by the user).** The snapshot is a *verification*
+view: text is capped at ~160 chars and it uses the snapshot matcher rather than the run's
+HTML matcher. That's fine because the render is **example data to build + verify the
+recipe** — the **saved run still extracts from freshly-fetched HTML** (`recipe_runner`,
+unchanged), which is where full fidelity and real data matter. Preview answers "did I pick
+the right things?"; the run answers "what's actually on the live site now?"
+
+**Rejected:** caching the parsed DOM tree (ADR 0008's deferred follow-up) — it would speed
+the re-parse but keep the N selector calls and the S3 dependency; extracting from the
+snapshot removes all three at once. Client-side extraction in the browser — rejected for the
+same reason as ADR 0001 D4: no CSS engine on the flat node list; the backend matcher is
+authoritative and already exists.
+
 ### Concepts to look up (follow-up)
 
 - **Mode affordances** — when a single canvas serves two intents (pick items vs map fields),

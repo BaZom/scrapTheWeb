@@ -1,4 +1,4 @@
-from app.selector_generator import generate_selector, infer_selector
+from app.selector_generator import generate_selector, infer_selector, preview_from_snapshot
 
 
 def _node(node_id: str, **overrides: object) -> dict[str, object]:
@@ -130,3 +130,47 @@ def test_infer_relative_matches_cells_across_all_containers() -> None:
         nodes, ["title-0", "title-1"], "node", container_selector="article.product_pod"
     )
     assert set(result["matchedNodeIds"]) == {"title-0", "title-1", "title-2"}
+
+
+def test_preview_from_snapshot_extracts_all_items_from_the_snapshot() -> None:
+    # Build + verify a recipe straight from domNodes — no HTML parse (ADR 0009). Three cards,
+    # each with a title (text) and a link (href); preview returns one row per card.
+    nodes = _build_grid(3)
+    for i in range(3):
+        nodes.append(
+            _node(
+                f"title-{i}",
+                tag="h3",
+                text=f"Title {i}",
+                parentNodeId=f"card-{i}",
+                classes=["title"],
+            )
+        )
+        nodes.append(
+            _node(
+                f"a-{i}",
+                tag="a",
+                text=f"Title {i}",
+                attrs={"href": f"/p/{i}"},
+                parentNodeId=f"card-{i}",
+                classes=["lnk"],
+            )
+        )
+    picks = [
+        {"nodeId": "title-0", "extract": "text", "name": "title"},
+        {"nodeId": "a-0", "extract": "href", "name": "link"},
+    ]
+    result = preview_from_snapshot(nodes, "article.product_pod", picks)
+    assert [f["name"] for f in result["fields"]] == ["title", "link"]
+    assert len(result["rows"]) == 3
+    assert result["rows"][1]["title"] == "Title 1"
+    assert result["rows"][2]["link"] == "/p/2"
+
+
+def test_preview_from_snapshot_single_page_is_one_row() -> None:
+    nodes = _build_grid(1)
+    nodes.append(_node("h1", tag="h1", text="The Title", parentNodeId="card-0", classes=["t"]))
+    picks = [{"nodeId": "h1", "extract": "text", "name": "title"}]
+    result = preview_from_snapshot(nodes, "body", picks)
+    assert len(result["rows"]) == 1
+    assert result["rows"][0]["title"] == "The Title"

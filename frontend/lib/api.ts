@@ -117,6 +117,11 @@ const previewSchema = z.object({
   rowCount: z.number()
 });
 
+// Snapshot preview also returns the generated selectors so the caller can save them.
+const snapshotPreviewSchema = previewSchema.extend({
+  fields: z.array(previewFieldSchema)
+});
+
 const recipeSchema = z.object({
   id: z.string(),
   organizationId: z.string(),
@@ -341,6 +346,29 @@ export async function previewPageSession(
     body: JSON.stringify({ containerSelector, fields })
   });
   return parseApiResponse(response, previewSchema);
+}
+
+export type SnapshotPick = { nodeId: string; extract: ExtractType; name: string };
+export type SnapshotPreview = z.infer<typeof snapshotPreviewSchema>;
+
+// Fast preview from the render snapshot (ADR 0009): generates each picked field's selector
+// and reads its value from domNodes server-side — no S3 fetch, no HTML re-parse. Returns the
+// extracted rows AND the generated fields (to save). containerSelector "body" = single page.
+export async function previewFromSnapshot(
+  sessionId: string,
+  containerSelector: string,
+  picks: SnapshotPick[],
+  accessToken: string
+): Promise<SnapshotPreview> {
+  const response = await fetch(`${baseUrl}/api/page-sessions/${sessionId}/preview/snapshot`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ containerSelector, picks })
+  });
+  return parseApiResponse(response, snapshotPreviewSchema);
 }
 
 export async function createRecipe(

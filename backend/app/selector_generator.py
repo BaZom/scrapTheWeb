@@ -117,6 +117,84 @@ def infer_selector(
     }
 
 
+def preview_from_snapshot(
+    dom_nodes: list[dict[str, Any]],
+    container_selector: str,
+    picks: list[dict[str, str]],
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Fast preview straight from the render snapshot — no S3 fetch, no HTML re-parse.
+
+    The render already captured every element's text/href/src into ``domNodes`` (ADR 0009).
+    For *building and verifying* a recipe against this example page, that snapshot is enough,
+    so we generate each picked field's selector and read its value from the snapshot itself,
+    over every matched item. The *saved run* still extracts from freshly-fetched HTML — that's
+    where full fidelity matters; preview values here are the snapshot's (text capped ~160ch).
+
+    ``picks`` is ``[{nodeId, extract, name}]``. Returns ``{rows, fields}`` — the extracted rows
+    plus the generated ``{name, selector, extract}`` fields (so the caller can save them).
+    Single-record pages (no real container) match each field page-wide for one row.
+    """
+    nodes = [_normalize_node(node) for node in dom_nodes if isinstance(node, dict)]
+    node_by_id = {node["nodeId"]: node for node in nodes}
+    is_single = not container_selector or container_selector == "body"
+
+    fields: list[dict[str, str]] = []
+    for pick in picks:
+        node_id = pick.get("nodeId", "")
+        if node_id not in node_by_id:
+            continue
+        try:
+            generated = (
+                generate_selector(dom_nodes, node_id, "node")
+                if is_single
+                else generate_selector(dom_nodes, node_id, "node", container_selector)
+            )
+        except ValueError:
+            continue  # the picked node isn't inside the container — skip it
+        fields.append(
+            {"name": pick["name"], "selector": generated["selector"], "extract": pick["extract"]}
+        )
+
+    rows: list[dict[str, str]] = []
+    if is_single:
+        if fields:
+            rows = [
+                {
+                    field["name"]: _snapshot_value(
+                        next(iter(_matching_nodes(nodes, field["selector"])), None),
+                        field["extract"],
+                    )
+                    for field in fields
+                }
+            ]
+    else:
+        for container in _matching_nodes(nodes, container_selector)[:limit]:
+            rows.append(
+                {
+                    field["name"]: _snapshot_value(
+                        next(
+                            iter(_matching_descendants(container, nodes, field["selector"])),
+                            None,
+                        ),
+                        field["extract"],
+                    )
+                    for field in fields
+                }
+            )
+    return {"rows": rows, "fields": fields}
+
+
+def _snapshot_value(node: dict[str, Any] | None, extract: str) -> str:
+    if node is None:
+        return ""
+    if extract == "href":
+        return str(node["attrs"].get("href", ""))
+    if extract == "src":
+        return str(node["attrs"].get("src", ""))
+    return str(node.get("text", ""))  # text / html (the snapshot only carries text)
+
+
 def _candidates_for(positives: list[dict[str, Any]]) -> list[tuple[str, str]]:
     # Union the per-node candidates across every example, de-duped (first strategy wins).
     seen: set[str] = set()

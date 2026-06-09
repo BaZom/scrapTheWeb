@@ -26,7 +26,7 @@ import {
   listRuns,
   login,
   logout,
-  previewPageSession,
+  previewFromSnapshot,
   refreshSession,
   register,
   runRecipe
@@ -480,10 +480,11 @@ export default function Home() {
     if (first) handleNodeSelect(first);
   }
 
-  // Preview records (ADR 0009): the ONLY thing that extracts. Takes the fields the user
-  // selected (table ticks and/or screenshot clicks), generates each one's relative selector
-  // (parallel, reusing /selector), commits them as the recipe fields, then extracts ALL
-  // matched items and shows them in the bottom panel. Nothing here runs until the click.
+  // Preview records (ADR 0009): the only thing that extracts. ONE call to the snapshot
+  // preview — the backend generates each selected field's selector and reads its value from
+  // the render snapshot (no S3 fetch, no HTML re-parse), returning all matched rows + the
+  // generated fields. We commit the fields (so Save works) and show the rows in the bottom
+  // panel. The saved run does the full HTML extraction later, against fresh pages.
   async function handlePreviewRecords(
     picks: { nodeId: string; extract: ExtractType; name: string; value: string }[]
   ) {
@@ -491,39 +492,19 @@ export default function Home() {
     setPreviewBusy(true);
     setError(null);
     try {
-      const resolved = await Promise.all(
-        picks.map((pick) =>
-          // Single-record pages: page-wide unique selector (no container). List: relative to
-          // the chosen item. Mirrors how field selectors were generated before (ADR 0005).
-          (recipeShape === "single"
-            ? generateSelector(pageSession.sessionId, pick.nodeId, session.access_token, undefined, { single: true })
-            : generateSelector(pageSession.sessionId, pick.nodeId, session.access_token, selectorResult.selector)
-          )
-            .then((sel) => ({ pick, selector: sel.selector }))
-            .catch(() => null)
-        )
-      );
-      // Names are already final + unique (deduped in the component), so use them directly.
-      const fields: { name: string; selector: string; extract: ExtractType }[] = [];
-      const samples: Record<string, string> = {};
-      for (const item of resolved) {
-        if (!item) continue;
-        fields.push({ name: item.pick.name, selector: item.selector, extract: item.pick.extract });
-        if (item.pick.value) samples[item.pick.name] = item.pick.value;
-      }
-      if (fields.length === 0) return;
-      // Commit the fields (so Save works), then extract all matched items with those same
-      // fields (state.fields would be stale this tick, so pass the freshly-built list).
-      dispatch({ type: "fields_added", fields, samples });
-      const result = await previewPageSession(
+      const { rows, fields } = await previewFromSnapshot(
         pageSession.sessionId,
         selectorResult.selector,
-        fields,
+        picks.map((p) => ({ nodeId: p.nodeId, extract: p.extract, name: p.name })),
         session.access_token
       );
-      dispatch({ type: "preview_succeeded", preview: result });
+      if (fields.length === 0) return;
+      const samples: Record<string, string> = {};
+      for (const p of picks) if (p.value) samples[p.name] = p.value;
+      dispatch({ type: "fields_added", fields, samples });
+      dispatch({ type: "preview_succeeded", preview: { rows, rowCount: rows.length } });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Preview extraction failed");
+      setError(e instanceof Error ? e.message : "Preview failed");
     } finally {
       setPreviewBusy(false);
     }
