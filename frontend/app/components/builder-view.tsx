@@ -30,6 +30,16 @@ import {
   fmtDuration
 } from "./ui";
 
+const LINK_BUTTON_STYLE = {
+  border: 0,
+  background: "transparent",
+  padding: 0,
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--accent-deep)",
+  cursor: "pointer"
+} as const;
+
 const LIST_STEPS = ["Load page", "Pick an item", "Choose details", "Preview", "Save & run"];
 const SINGLE_STEPS = ["Load page", "Choose details", "Preview", "Save & run"];
 
@@ -164,7 +174,10 @@ export function BuilderView(props: BuilderProps) {
     () => new Map((props.pageSession?.domNodes ?? []).map((n) => [n.nodeId, n] as const)),
     [props.pageSession]
   );
-  const showCandidates = props.pickMode === "container" && candidates.length > 0;
+  // Candidate cards help the FIRST pick. Once an item is chosen, switch to node overlays so
+  // the matched set is outlined and any missed card can be clicked to include it (ADR 0009).
+  const showCandidates =
+    props.pickMode === "container" && candidates.length > 0 && !props.selectorResult;
 
   // The repeated group the current container belongs to — lets us outline the EXACT
   // matched cards (preferred over the tag/class approximation in `matchedNodeIds`).
@@ -709,9 +722,10 @@ export function BuilderView(props: BuilderProps) {
                           })
                         : null}
 
-                      {/* Persistent exact-match outline for the selected group (e.g. after
-                          auto-switching to Field mode the matched cards stay outlined) */}
-                      {props.imageSize && !showCandidates && groupMembers.length > 0
+                      {/* Persistent exact-match outline for the selected group while mapping
+                          fields. In container mode the node overlays already paint the matched
+                          outline (and stay clickable to add missed items), so skip it there. */}
+                      {props.imageSize && props.pickMode === "field" && groupMembers.length > 0
                         ? groupMembers.map((c) => (
                             <div
                               key={`grp-${c.nodeId}`}
@@ -954,33 +968,39 @@ export function BuilderView(props: BuilderProps) {
               </div>
               {/* Teach-by-example refine (ADR 0009): no selector shown — the user grows the
                   selection by clicking more items, never by editing code. */}
+              {/* Teach-by-example refine (ADR 0009). Adding missed items only works in Item
+                  mode, but the first pick auto-advances to Details — so when in field mode we
+                  offer a button to come back; in container mode we tell them to click + Done. */}
               {props.selectorResult ? (
-                <div>
-                  <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.45 }}>
-                    Missed some? <strong style={{ color: "var(--text-secondary)" }}>Click them on the page</strong> to
-                    include them too.
-                  </p>
-                  {props.containerExampleIds.length > 1 ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-                      <Badge tone="outline">{props.containerExampleIds.length} examples</Badge>
-                      <button
-                        type="button"
-                        onClick={props.onResetItemExamples}
-                        style={{
-                          border: 0,
-                          background: "transparent",
-                          padding: 0,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: "var(--accent-deep)",
-                          cursor: "pointer"
-                        }}
-                      >
-                        Start over
-                      </button>
+                props.pickMode === "field" ? (
+                  <button
+                    type="button"
+                    onClick={() => props.onPickModeChange("container")}
+                    style={LINK_BUTTON_STYLE}
+                  >
+                    Missed some items? Add them →
+                  </button>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.45 }}>
+                      <strong style={{ color: "var(--text-secondary)" }}>Click any items we missed</strong> on the
+                      page to include them.
+                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+                      <Button variant="secondary" size="sm" icon="check" onClick={() => props.onPickModeChange("field")}>
+                        Done
+                      </Button>
+                      {props.containerExampleIds.length > 1 ? (
+                        <>
+                          <Badge tone="outline">{props.containerExampleIds.length} examples</Badge>
+                          <button type="button" onClick={props.onResetItemExamples} style={LINK_BUTTON_STYLE}>
+                            Start over
+                          </button>
+                        </>
+                      ) : null}
                     </div>
-                  ) : null}
-                </div>
+                  </div>
+                )
               ) : null}
               {props.selectorBusy ? (
                 <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>Finding similar items…</p>
