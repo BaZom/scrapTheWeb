@@ -213,14 +213,17 @@ export function BuilderView(props: BuilderProps) {
   }
 
   // Teach-by-example (ADR 0009): the first container click picks the item (auto-advances);
-  // once an item is selected, further clicks add example items to broaden the match. A
-  // click on an already-matched item is ignored — it's already included.
+  // once an item is selected, further clicks add genuinely-missed items to broaden the match.
+  // Detected items are FROZEN — a click on a matched card OR anywhere inside one is ignored
+  // (it's already included), so only a click OUTSIDE every detected item adds a new example.
+  // (Checking matchedNodeIds alone was the bug: clicking a child inside a card slipped
+  // through and got added as a bogus item.)
   function handleContainerPick(node: DomNode) {
     if (!props.selectorResult) {
       props.onNodeSelect(node);
       return;
     }
-    if (matchedNodeIds.has(node.nodeId)) return;
+    if (matchedContainerIdOf(node) !== null) return;
     props.onAddItemExample(node);
   }
 
@@ -618,6 +621,13 @@ export function BuilderView(props: BuilderProps) {
                             // In container mode, persistently outline the whole repeated set
                             // so the user can confirm the selection grabbed every card.
                             const matched = props.pickMode === "container" && matchedNodeIds.has(node.nodeId);
+                            // While refining items, everything already inside a detected item
+                            // is FROZEN: shown but not interactive, so only genuinely-missed
+                            // items (outside every card) invite a click. (ADR 0009 follow-up.)
+                            const frozen =
+                              props.pickMode === "container" &&
+                              !!props.selectorResult &&
+                              matchedContainerIdOf(node) !== null;
 
                             // Devtools-style: boxes are invisible until hovered. Selected and
                             // matched nodes stay visible so the current state is always readable.
@@ -626,7 +636,7 @@ export function BuilderView(props: BuilderProps) {
                             if (selected) {
                               background = "rgba(91,91,214,0.30)";
                               border = "1.4px solid var(--accent)";
-                            } else if (hovered) {
+                            } else if (hovered && !frozen) {
                               background = "rgba(37,99,235,0.16)";
                               border = "1.6px solid var(--info)";
                             } else if (matched) {
@@ -657,12 +667,12 @@ export function BuilderView(props: BuilderProps) {
                                   background,
                                   border,
                                   borderRadius: 4,
-                                  cursor: "pointer",
+                                  cursor: frozen ? "default" : "pointer",
                                   padding: 0,
                                   transition: "background 80ms ease, border-color 80ms ease"
                                 }}
                               >
-                                {hovered && !selected ? (
+                                {hovered && !selected && !frozen ? (
                                   <span
                                     style={{
                                       position: "absolute",

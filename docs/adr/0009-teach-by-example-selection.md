@@ -116,6 +116,16 @@ Item mode) and a **Done** button back to Details. `showCandidates` is gated on
 `!selectorResult` so candidate cards help only the first pick; the group outline is
 restricted to field mode to avoid doubling the node-overlay matched outline.
 
+**Second fix — freeze detected items.** The first cut guarded the add only on
+`matchedNodeIds.has(node)`, which is true only for the *card itself*. Clicking a **child
+element inside** an already-detected card (its title, price, …) slipped through and was
+added as a bogus item, broadening the selector to garbage. Now the guard uses
+`matchedContainerIdOf(node)` (walk up to a matched-container ancestor): a click on, or
+**anywhere inside**, a detected item is ignored — the detected set is *frozen*. Visually,
+frozen nodes don't hover-highlight and show a default cursor, so only genuinely-missed
+regions (outside every card) invite a click. This is the "freeze the items already detected
+so the missed ones can be added" behavior.
+
 ### 2. List/single detection — no new logic
 
 Confirmed already handled: render-time candidate scoring picks list vs single
