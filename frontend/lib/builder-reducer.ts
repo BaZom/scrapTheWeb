@@ -28,6 +28,10 @@ export type BuilderState = {
   pageSession: PageSession | null;
   selectedNode: DomNode | null;
   selectorResult: SelectorResult | null;
+  // Teach-by-example (ADR 0009): the node IDs the user clicked as item / field examples.
+  // The selector is inferred to cover all of them; the first pick seeds the list.
+  containerExampleIds: string[];
+  fieldExampleIds: string[];
   recipeShape: RecipeShape;
   pickMode: PickMode;
   fieldNode: DomNode | null;
@@ -63,8 +67,12 @@ export type BuilderAction =
   | { type: "render_succeeded"; pageSession: PageSession; suggestedName: string }
   | { type: "container_selecting"; node: DomNode }
   | { type: "container_selector_resolved"; result: SelectorResult }
+  | { type: "container_example_added"; node: DomNode }
+  | { type: "container_selector_inferred"; result: SelectorResult }
   | { type: "field_selecting"; node: DomNode }
   | { type: "field_selector_resolved"; result: SelectorResult; defaultName: string }
+  | { type: "field_example_added"; node: DomNode }
+  | { type: "field_selector_inferred"; result: SelectorResult }
   | { type: "field_name_changed"; name: string }
   | { type: "field_extract_changed"; extract: ExtractType }
   | { type: "field_attribute_changed"; attribute: string }
@@ -97,6 +105,8 @@ export const initialBuilderState: BuilderState = {
   pageSession: null,
   selectedNode: null,
   selectorResult: null,
+  containerExampleIds: [],
+  fieldExampleIds: [],
   recipeShape: "list",
   pickMode: "container",
   fieldNode: null,
@@ -136,6 +146,8 @@ function clearedFlow(state: BuilderState): BuilderState {
     pageSession: null,
     selectedNode: null,
     selectorResult: null,
+    containerExampleIds: [],
+    fieldExampleIds: [],
     fieldNode: null,
     fieldSelector: null,
     fieldSamples: {},
@@ -171,11 +183,14 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
     }
 
     case "container_selecting":
-      // Picking (or re-picking) an item resets everything downstream of it.
+      // Picking (or re-picking) an item resets everything downstream of it, and seeds the
+      // example list with this first click (teach-by-example, ADR 0009).
       return {
         ...state,
         selectedNode: action.node,
         selectorResult: null,
+        containerExampleIds: [action.node.nodeId],
+        fieldExampleIds: [],
         fieldNode: null,
         fieldSelector: null,
         fields: [],
@@ -189,8 +204,26 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
       // Auto-advance: once the item selector resolves, the next action is mapping fields.
       return { ...state, selectorResult: action.result, pickMode: "field" };
 
+    case "container_example_added": {
+      // Teach-by-example (ADR 0009): an extra item example to broaden the match. Keep the
+      // mapped fields (relative selectors stay valid as the item set widens) but clear the
+      // preview/save/run, which depend on the item set. No-op if already an example.
+      if (state.containerExampleIds.includes(action.node.nodeId)) return state;
+      return {
+        ...state,
+        containerExampleIds: [...state.containerExampleIds, action.node.nodeId],
+        preview: null,
+        savedRecipe: null,
+        run: null
+      };
+    }
+
+    case "container_selector_inferred":
+      // Set the re-inferred item selector without auto-advancing — the user is refining.
+      return { ...state, selectorResult: action.result };
+
     case "field_selecting":
-      return { ...state, fieldNode: action.node, fieldSelector: null };
+      return { ...state, fieldNode: action.node, fieldSelector: null, fieldExampleIds: [action.node.nodeId] };
 
     case "field_selector_resolved":
       return {
@@ -198,6 +231,16 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         fieldSelector: action.result,
         fieldName: state.fieldName ? state.fieldName : action.defaultName
       };
+
+    case "field_example_added": {
+      // Teach-by-example (ADR 0009): another example of the same field in a different card,
+      // to correct the relative selector. No-op if already an example.
+      if (state.fieldExampleIds.includes(action.node.nodeId)) return state;
+      return { ...state, fieldExampleIds: [...state.fieldExampleIds, action.node.nodeId] };
+    }
+
+    case "field_selector_inferred":
+      return { ...state, fieldSelector: action.result };
 
     case "field_name_changed":
       return { ...state, fieldName: action.name };
@@ -228,6 +271,7 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         fieldName: "",
         fieldSelector: null,
         fieldNode: null,
+        fieldExampleIds: [],
         preview: null,
         savedRecipe: null,
         run: null
@@ -252,6 +296,8 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         ...state,
         ...shapeFlow(action.shape),
         selectedNode: null,
+        containerExampleIds: [],
+        fieldExampleIds: [],
         fieldNode: null,
         fieldSelector: null,
         fields: [],
@@ -293,6 +339,9 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         pageSession: action.draft.pageSession,
         selectedNode: action.draft.selectedNode,
         selectorResult: action.draft.selectorResult,
+        // Re-seed the item example list from the restored pick so refine works post-reload.
+        containerExampleIds: action.draft.selectedNode ? [action.draft.selectedNode.nodeId] : [],
+        fieldExampleIds: [],
         fields: action.draft.fields,
         fieldSamples: action.draft.fieldSamples
       };
@@ -319,6 +368,7 @@ function stepNavigated(state: BuilderState, target: number): BuilderState {
             fieldSamples: {},
             fieldNode: null,
             fieldSelector: null,
+            fieldExampleIds: [],
             preview: null
           }
         : state;
@@ -331,6 +381,8 @@ function stepNavigated(state: BuilderState, target: number): BuilderState {
       ...next,
       selectedNode: null,
       selectorResult: null,
+      containerExampleIds: [],
+      fieldExampleIds: [],
       fieldNode: null,
       fieldSelector: null,
       fields: [],
@@ -338,7 +390,7 @@ function stepNavigated(state: BuilderState, target: number): BuilderState {
       pickMode: "container"
     };
   } else if (target === 2) {
-    next = { ...next, fieldNode: null, fieldSelector: null, pickMode: "field" };
+    next = { ...next, fieldNode: null, fieldSelector: null, fieldExampleIds: [], pickMode: "field" };
   }
   if (target <= 2) next = { ...next, preview: null };
   return { ...next, savedRecipe: null, run: null };

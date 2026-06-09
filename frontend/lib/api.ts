@@ -303,6 +303,29 @@ export async function generateSelector(
   return parseApiResponse(response, selectorSchema);
 }
 
+// Teach-by-example (ADR 0009): infer a selector covering several clicked examples.
+// Items use mode "container"; fields pass the container selector for a relative match.
+export async function inferSelector(
+  sessionId: string,
+  positiveNodeIds: string[],
+  accessToken: string,
+  options: { mode: "container" | "node"; containerSelector?: string }
+): Promise<SelectorResult> {
+  const response = await fetch(`${baseUrl}/api/page-sessions/${sessionId}/selector/infer`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      positiveNodeIds,
+      mode: options.mode,
+      containerSelector: options.containerSelector
+    })
+  });
+  return parseApiResponse(response, selectorSchema);
+}
+
 export async function previewPageSession(
   sessionId: string,
   containerSelector: string,
