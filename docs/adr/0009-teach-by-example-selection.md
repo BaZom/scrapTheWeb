@@ -177,12 +177,14 @@ panel.
   ADR 0008 cache). Enough to confirm "title = the right thing" without a table.
 - **Full table on demand.** "Preview records" toggles the right panel to a compact
   all-records table (and back to one item). No bottom table during build.
-- **Roomier layout.** The screenshot is capped narrower (`maxWidth` 1180 → 760) and the
-  right assistant panel widened (360 → 440), so the page view stops hogging space and the
-  data sits beside it.
-- **Results panel is post-run only.** The bottom panel (records / changes / logs + export)
-  now renders only once a run exists; during build there's no bottom panel, matching the
-  "data on the right" layout.
+- **Roomier layout (corrected).** First attempt shrank the *screenshot image*
+  (`maxWidth` 760) — wrong lever, leaving empty gutters around a small image. Corrected:
+  resize the **windows** — the screenshot fills its pane (`width: 100%`, no inner cap) and
+  the right assistant panel is widened (`minmax(440px, 560px)`), so space is shared between a
+  roomy data panel and a gutter-free page view.
+- **Results panel stays.** The bottom panel (records table / changes / logs + export) renders
+  as before (an earlier change to hide it until a run was reverted at the user's request —
+  the full records table + Changes/Logs tabs are wanted visible).
 
 **Rejected:** a backend "limit to N rows" param for the one-item preview — the cache already
 makes extracting all rows cheap, and showing `rows[0]` needs no API change; revisit only if

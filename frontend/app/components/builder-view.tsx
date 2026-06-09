@@ -595,9 +595,10 @@ export function BuilderView(props: BuilderProps) {
       <div
         style={{
           display: "grid",
-          // Wider assistant panel on the right (holds the live data + records table); the
-          // page screenshot is capped narrower below so it stops hogging space (ADR 0009).
-          gridTemplateColumns: "minmax(0, 1fr) 440px",
+          // Resize the WINDOWS, not the image (ADR 0009 fix): the page pane shares space with
+          // a roomy assistant panel (where the data lives), and the screenshot fills its pane
+          // below — so there are no empty gutters around a shrunken image.
+          gridTemplateColumns: "minmax(0, 1fr) minmax(440px, 560px)",
           flex: 1,
           minHeight: 0,
           overflow: "hidden"
@@ -620,7 +621,7 @@ export function BuilderView(props: BuilderProps) {
           {props.pageSession ? (
             props.screenshotObjectUrl ? (
               props.pickerView === "overlays" ? (
-                <div style={{ maxWidth: 760, margin: "0 auto" }}>
+                <div style={{ width: "100%" }}>
                   <div
                     style={{
                       background: "white",
@@ -1498,9 +1499,8 @@ export function BuilderView(props: BuilderProps) {
         </aside>
       </div>
 
-      {/* RESULTS PANEL — post-run only (records / changes / logs). During build the live
-          data lives in the right assistant panel instead, so the page view stays roomy. */}
-      {props.run ? (
+      {/* BOTTOM PANEL — always available: Preview records table, Changes, and Run logs.
+          (The right panel's compact data is additive; this full panel is not gated on a run.) */}
       <div
         style={{
           borderTop: "1px solid var(--border)",
@@ -1703,7 +1703,6 @@ export function BuilderView(props: BuilderProps) {
           </div>
         ) : null}
       </div>
-      ) : null}
     </div>
   );
 }
