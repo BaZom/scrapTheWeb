@@ -21,6 +21,7 @@ from app.limits import (
 )
 from app.models import Membership, PageSession, User
 from app.observability import PAGE_RENDER_REQUEST_COUNTER
+from app.page_html_cache import PageHtmlCache
 from app.recipe_runner import extract_preview_rows
 from app.resources import make_s3_client
 from app.selector_generator import SelectorMode, generate_selector
@@ -275,19 +276,35 @@ async def _load_page_session_payload(request: Request, session_id: UUID) -> dict
     return loaded_payload
 
 
-async def _load_page_session_html(page_session: PageSession, settings: Settings) -> str:
+async def _load_page_session_html(
+    page_session: PageSession,
+    settings: Settings,
+    cache: PageHtmlCache | None = None,
+) -> str:
     if page_session.html_key is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Page session HTML snapshot is not available",
         )
+    html_key = page_session.html_key
+
+    # Best-effort cache in front of S3 (ADR 0008). The snapshot is immutable for the life
+    # of the session, so a hit is always valid; S3 stays the source of truth on a miss.
+    if cache is not None:
+        cached = cache.get(html_key)
+        if cached is not None:
+            return cached
+
     s3_client = make_s3_client(settings)
 
     def _get_object() -> str:
-        response = s3_client.get_object(Bucket=settings.s3_bucket, Key=page_session.html_key)
+        response = s3_client.get_object(Bucket=settings.s3_bucket, Key=html_key)
         return cast(str, response["Body"].read().decode("utf-8", errors="replace"))
 
-    return await asyncio.to_thread(_get_object)
+    html = await asyncio.to_thread(_get_object)
+    if cache is not None:
+        cache.set(html_key, html)
+    return html
 
 
 @router.post("", response_model=PageSessionCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -408,12 +425,14 @@ async def page_session_selector(
 async def page_session_preview(
     session_id: UUID,
     payload: PreviewRequest,
+    request: Request,
     user: Annotated[User, Depends(current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> PreviewResponse:
     page_session = await _org_scoped_page_session(session_id, user, session)
-    html = await _load_page_session_html(page_session, settings)
+    cache = getattr(request.app.state, "page_html_cache", None)
+    html = await _load_page_session_html(page_session, settings, cache)
     rows = extract_preview_rows(
         html,
         payload.containerSelector,

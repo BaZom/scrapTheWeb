@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +19,18 @@ class Settings(BaseSettings):
     frontend_origin: str = Field(default="http://localhost:3000", alias="FRONTEND_ORIGIN")
     render_result_timeout_seconds: int = Field(default=20, alias="RENDER_RESULT_TIMEOUT_SECONDS")
     page_session_ttl_seconds: int = Field(default=3600, alias="PAGE_SESSION_TTL_SECONDS")
+    # In-process HTML snapshot cache for the preview loop (ADR 0008). Best-effort; S3 stays
+    # the durable source of truth. TTL defaults to the page-session TTL (set below) so a
+    # cached snapshot never outlives its session.
+    page_html_cache_enabled: bool = Field(default=True, alias="PAGE_HTML_CACHE_ENABLED")
+    page_html_cache_max_entries: int = Field(default=64, alias="PAGE_HTML_CACHE_MAX_ENTRIES")
+    page_html_cache_max_bytes: int = Field(default=134217728, alias="PAGE_HTML_CACHE_MAX_BYTES")
+    page_html_cache_max_item_bytes: int = Field(
+        default=5242880, alias="PAGE_HTML_CACHE_MAX_ITEM_BYTES"
+    )
+    page_html_cache_ttl_seconds: int | None = Field(
+        default=None, alias="PAGE_HTML_CACHE_TTL_SECONDS"
+    )
     render_navigation_timeout_ms: int = Field(default=20000, alias="RENDER_NAVIGATION_TIMEOUT_MS")
     # Render fingerprint: a realistic browser identity reduces naive anti-bot blocks.
     render_user_agent: str = Field(
@@ -75,6 +87,14 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = Field(
         default="http://localhost:3000", alias="CORS_ALLOWED_ORIGINS"
     )
+
+    @model_validator(mode="after")
+    def _default_html_cache_ttl(self) -> "Settings":
+        # PAGE_HTML_CACHE_TTL_SECONDS defaults to the page-session TTL when unset, so a
+        # cached snapshot can't outlive the session whose HTML it holds.
+        if self.page_html_cache_ttl_seconds is None:
+            self.page_html_cache_ttl_seconds = self.page_session_ttl_seconds
+        return self
 
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]

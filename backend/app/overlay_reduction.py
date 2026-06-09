@@ -4,7 +4,10 @@ from typing import Any
 DISMISS_PATTERNS = (
     (
         "reject_optional",
-        re.compile(r"alle ablehnen|nicht akzeptieren|ablehnen|reject all|reject|decline|deny", re.I),
+        re.compile(
+            r"alle ablehnen|nicht akzeptieren|ablehnen|reject all|reject|decline|deny",
+            re.I,
+        ),
     ),
     (
         "necessary_only",
