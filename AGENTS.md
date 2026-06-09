@@ -17,8 +17,13 @@ Two doc layers, **both kept current**:
   change a feature, flow, file layout, or concept it documents, update the matching
   `docs/reference/` file in the SAME commit.** New major areas get their own file there.
 
-So a non-trivial change usually touches **both**: the ADR (the *why*) and the reference file
-(the new *current truth*) — in the same commit. Start by reading `docs/reference/README.md`.
+- **`docs/backlog/`** = *to-do*. Open bugs and specific planned work, one file per item.
+  Pull next work from here; when an item ships, record the *why* in an ADR, update the
+  matching `docs/reference/` file, and remove/close the backlog item.
+
+So a non-trivial change usually touches the ADR (the *why*) and the reference file (the new
+*current truth*) in the same commit. Start by reading `docs/reference/README.md` and
+`docs/backlog/README.md`.
 
 ## Product principle (load-bearing)
 

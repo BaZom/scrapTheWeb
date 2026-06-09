@@ -29,8 +29,9 @@ This rule is also recorded in `CLAUDE.md` and `AGENTS.md` so every agent/contrib
 - **[builder.md](builder.md)** — the recipe builder in depth: the end-to-end UI flow, the
   no-code design principles, the reducer state machine, the selection model, selectors &
   extraction, the files/classes involved, and the concepts behind them.
-- **[production-readiness.md](production-readiness.md)** — current limitations and the
-  concrete improvements to make before/at production scale.
+- **[production-readiness.md](production-readiness.md)** — broad limitations and directions to
+  harden before/at production scale. (Concrete open bugs + specific planned tickets live in
+  **`docs/backlog/`**, not here.)
 
 ## Related docs
 

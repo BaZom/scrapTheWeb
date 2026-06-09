@@ -30,6 +30,9 @@ render + extraction) · Postgres · Redis · S3-compatible storage. See `README.
     app works **now** — features, UI flows, architecture, files, concepts, production gaps.
     **When you change a feature/flow/file-layout/concept it covers, update the matching
     `docs/reference/` file in the SAME commit.** New major areas get their own file there.
+  - **`docs/backlog/`** = *to-do* (open bugs + specific planned work, one file per item). Pull
+    next work from here; when an item ships, record the why in an ADR, update the matching
+    reference file, and close/remove the backlog item.
   - So a non-trivial change typically touches **both**: the ADR (why, in this commit) and the
     reference file (the new current truth, in this commit).
 - **Small, isolated commits**, one logical change each. Commit pre-existing uncommitted
