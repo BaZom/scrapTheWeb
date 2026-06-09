@@ -109,7 +109,8 @@ const previewFieldSchema = z.object({
   name: z.string(),
   selector: z.string(),
   extract: extractTypeSchema,
-  attribute: z.string().optional()
+  // The backend serializes an absent attribute as null (not omitted), so accept both.
+  attribute: z.string().nullable().optional()
 });
 
 const previewSchema = z.object({
