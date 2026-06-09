@@ -388,6 +388,34 @@ export default function Home() {
     setFieldSample(value);
   }, [fieldNode, fieldExtract, fieldAttribute]);
 
+  // Live preview as you build (ADR 0009): whenever the item selector or the field set
+  // changes, re-extract the table automatically (debounced) so the user sees real values
+  // without clicking Preview — fast on repeat via the HTML cache (ADR 0008). Cancellable so
+  // a slow/stale response can't overwrite a newer one.
+  const fieldsSignature = JSON.stringify(fields);
+  useEffect(() => {
+    if (!session || !pageSession || !selectorResult || fields.length === 0) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setPreviewBusy(true);
+      previewPageSession(pageSession.sessionId, selectorResult.selector, fields, session.access_token)
+        .then((result) => {
+          if (!cancelled) dispatch({ type: "preview_succeeded", preview: result });
+        })
+        .catch(() => {
+          // Stay quiet — the manual Preview button surfaces errors; auto-preview shouldn't nag.
+        })
+        .finally(() => {
+          if (!cancelled) setPreviewBusy(false);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, pageSession?.sessionId, selectorResult?.selector, fieldsSignature]);
+
   function applyWorkspaceData([d, r, u]: [Dashboard, Recipe[], ExtractionRun[]]) {
     setDashboard(d);
     setRecipes(r);
