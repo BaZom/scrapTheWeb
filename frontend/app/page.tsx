@@ -18,6 +18,7 @@ import {
   downloadRunExport,
   fetchScreenshot,
   generateSelector,
+  inferSelector,
   getDashboard,
   getRun,
   streamRunEvents,
@@ -82,6 +83,8 @@ export default function Home() {
     pageSession,
     selectedNode,
     selectorResult,
+    containerExampleIds,
+    fieldExampleIds,
     recipeShape,
     pickMode,
     fieldNode,
@@ -507,6 +510,32 @@ export default function Home() {
     }
   }
 
+  // Teach-by-example (ADR 0009): the user clicked another item we missed. Re-infer the item
+  // selector to cover every example so far; the count + outline grow. No CSS surfaced.
+  async function handleAddItemExample(node: DomNode) {
+    if (!session || !pageSession) return;
+    const ids = [...containerExampleIds, node.nodeId];
+    dispatch({ type: "container_example_added", node });
+    setSelectorBusy(true);
+    setError(null);
+    try {
+      const result = await inferSelector(pageSession.sessionId, ids, session.access_token, {
+        mode: "container"
+      });
+      dispatch({ type: "container_selector_inferred", result });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not include that item");
+    } finally {
+      setSelectorBusy(false);
+    }
+  }
+
+  // "Start over" — re-pick from the first example, dropping the extra examples.
+  function handleResetItemExamples() {
+    const first = pageSession?.domNodes.find((n) => n.nodeId === containerExampleIds[0]);
+    if (first) handleNodeSelect(first);
+  }
+
   function addField() {
     if (!fieldSelector) return;
     if (!fieldName.trim()) {
@@ -677,7 +706,10 @@ export default function Home() {
       renderBusy,
       error,
       onNodeSelect: handleNodeSelect,
-      onFieldNodeSelect: handleFieldNodeSelect
+      onFieldNodeSelect: handleFieldNodeSelect,
+      containerExampleIds,
+      onAddItemExample: handleAddItemExample,
+      onResetItemExamples: handleResetItemExamples
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -687,6 +719,7 @@ export default function Home() {
       selectedNode,
       selectorResult,
       selectorBusy,
+      containerExampleIds,
       recipeShape,
       pickMode,
       pickerView,

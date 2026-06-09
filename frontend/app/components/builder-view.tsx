@@ -90,6 +90,11 @@ export type BuilderProps = {
   error: string | null;
   onNodeSelect: (node: DomNode) => void;
   onFieldNodeSelect: (node: DomNode) => void;
+  // Teach-by-example (ADR 0009): once an item is picked, clicks add more examples to
+  // broaden the match instead of re-picking; Reset starts over from the first example.
+  containerExampleIds: string[];
+  onAddItemExample: (node: DomNode) => void;
+  onResetItemExamples: () => void;
 };
 
 function currentStep(props: BuilderProps) {
@@ -185,7 +190,19 @@ export function BuilderView(props: BuilderProps) {
       width: c.width,
       height: c.height
     };
-    props.onNodeSelect(node);
+    handleContainerPick(node);
+  }
+
+  // Teach-by-example (ADR 0009): the first container click picks the item (auto-advances);
+  // once an item is selected, further clicks add example items to broaden the match. A
+  // click on an already-matched item is ignored — it's already included.
+  function handleContainerPick(node: DomNode) {
+    if (!props.selectorResult) {
+      props.onNodeSelect(node);
+      return;
+    }
+    if (matchedNodeIds.has(node.nodeId)) return;
+    props.onAddItemExample(node);
   }
 
   const overlayNodes = useMemo(() => {
@@ -535,7 +552,7 @@ export function BuilderView(props: BuilderProps) {
                                 onClick={() =>
                                   props.pickMode === "field"
                                     ? props.onFieldNodeSelect(node)
-                                    : props.onNodeSelect(node)
+                                    : handleContainerPick(node)
                                 }
                                 title={`${props.pickMode === "field" ? "Field" : "Container"} ${nodeLabel(node)} ${node.text}`}
                                 style={{
@@ -776,7 +793,7 @@ export function BuilderView(props: BuilderProps) {
                               onClick={() =>
                                 props.pickMode === "field"
                                   ? props.onFieldNodeSelect(node)
-                                  : props.onNodeSelect(node)
+                                  : handleContainerPick(node)
                               }
                               style={{
                                 display: "block",
@@ -881,36 +898,52 @@ export function BuilderView(props: BuilderProps) {
                 </div>
                 {props.selectorResult ? (
                   <Badge tone="success" dot>
-                    {props.selectorResult.matchCount} matches
+                    {props.selectorResult.matchCount} items
                   </Badge>
                 ) : (
-                  <Badge tone="outline">No selection</Badge>
+                  <Badge tone="outline">Nothing picked yet</Badge>
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                 <Icon name="layers" size={14} style={{ color: "var(--accent-deep)" }} />
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>
-                  {props.selectedNode ? nodeLabel(props.selectedNode) : "Click an example item in the page"}
+                  {props.selectorResult
+                    ? `Found ${props.selectorResult.matchCount} similar items`
+                    : "Click an example item in the page"}
                 </span>
               </div>
+              {/* Teach-by-example refine (ADR 0009): no selector shown — the user grows the
+                  selection by clicking more items, never by editing code. */}
               {props.selectorResult ? (
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    background: "var(--surface-soft)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 7,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    color: "var(--text-primary)",
-                    wordBreak: "break-all"
-                  }}
-                >
-                  {props.selectorResult.selector}
+                <div>
+                  <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.45 }}>
+                    Missed some? <strong style={{ color: "var(--text-secondary)" }}>Click them on the page</strong> to
+                    include them too.
+                  </p>
+                  {props.containerExampleIds.length > 1 ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                      <Badge tone="outline">{props.containerExampleIds.length} examples</Badge>
+                      <button
+                        type="button"
+                        onClick={props.onResetItemExamples}
+                        style={{
+                          border: 0,
+                          background: "transparent",
+                          padding: 0,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "var(--accent-deep)",
+                          cursor: "pointer"
+                        }}
+                      >
+                        Start over
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {props.selectorBusy ? (
-                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>Generating selector…</p>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>Finding similar items…</p>
               ) : null}
             </div>
           ) : null}
@@ -930,6 +963,29 @@ export function BuilderView(props: BuilderProps) {
               </div>
               <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{props.fields.length} fields</span>
             </div>
+
+            {/* Plain-language summary (ADR 0009): what will be collected, in words. */}
+            {props.fields.length > 0 ? (
+              <p
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--text-secondary)",
+                  lineHeight: 1.5,
+                  margin: "0 0 12px",
+                  padding: "8px 10px",
+                  background: "var(--surface-soft)",
+                  borderRadius: 7
+                }}
+              >
+                Collecting{" "}
+                <strong style={{ color: "var(--text-primary)" }}>
+                  {props.fields.map((f) => f.name).join(", ")}
+                </strong>{" "}
+                {props.recipeShape === "single"
+                  ? "from this page."
+                  : `from ${props.selectorResult?.matchCount ?? 0} items.`}
+              </p>
+            ) : null}
 
             {props.fieldSelector ? (
               <Card className="card-pad" style={{ marginBottom: 12, background: "var(--accent-softer)", border: "1px solid var(--accent-soft)" }}>
