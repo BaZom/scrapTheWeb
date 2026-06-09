@@ -77,6 +77,10 @@ export type BuilderProps = {
   fields: PreviewField[];
   onFieldsChange: (fields: PreviewField[]) => void;
   onAddFields: (extracts: ExtractType[]) => void;
+  // Commit ticked rows from the auto-discovery table (ADR 0009): each becomes a field.
+  onAddDiscoveredFields: (
+    picks: { nodeId: string; extract: ExtractType; name: string; value: string }[]
+  ) => void;
   fieldSample: string | null;
   fieldSampleBusy: boolean;
   fieldSamples: Record<string, string>;
@@ -140,6 +144,26 @@ function isDescendant(node: DomNode, ancestor: DomNode, nodes: DomNode[]) {
   }
   return false;
 }
+
+// A friendly, snake_case field name from a hint string (itemprop / class / aria-label).
+function slugifyName(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+}
+
+// A discovered candidate field inside the selected card (ADR 0009): one extractable value.
+type FieldCandidate = {
+  key: string; // `${nodeId}:${extract}` — stable id for tick/name state
+  nodeId: string;
+  extract: ExtractType;
+  label: string; // Text / Link / Image
+  value: string; // preview value from the DOM node
+  suggestedName: string;
+};
 
 function formatValue(value: unknown) {
   if (value === null || value === undefined) return "";
@@ -241,40 +265,21 @@ export function BuilderView(props: BuilderProps) {
     return null;
   }
 
-  // First field click maps the detail (single-pick + auto live-sample); once a field is in
-  // the editor, clicking the SAME detail in a DIFFERENT card adds it as an example and
-  // re-infers the column (ADR 0009). A click inside the current card maps a fresh detail.
+  // Manual field pick: clicking a detail inside the selected card maps it as a single field
+  // (the auto-discovery table is the primary path; this is the fallback for anything missed).
   function handleFieldPick(node: DomNode) {
-    if (props.fieldSelector && props.fieldNode) {
-      const clickedCard = matchedContainerIdOf(node);
-      const currentCard = matchedContainerIdOf(props.fieldNode);
-      if (clickedCard && currentCard && clickedCard !== currentCard) {
-        props.onAddFieldExample(node);
-        return;
-      }
-    }
     props.onFieldNodeSelect(node);
   }
 
   const overlayNodes = useMemo(() => {
     const fieldMode = props.pickMode === "field";
     const nodes = props.pageSession?.domNodes ?? [];
-    // In field mode, make details clickable in EVERY matched card (teach-by-example across
-    // cards, ADR 0009), not just the first picked one. Fall back to the single picked card
-    // when there's no match set (single-record pages, whose body selector matches nothing).
-    const inMatchedCard = (n: DomNode) => {
-      let current: DomNode | undefined = n;
-      while (current) {
-        if (matchedNodeIds.has(current.nodeId)) return true;
-        current = current.parentNodeId ? domNodeById.get(current.parentNodeId) : undefined;
-      }
-      return false;
-    };
-    let all = nodes;
-    if (fieldMode) {
-      if (matchedNodeIds.size > 0) all = nodes.filter(inMatchedCard);
-      else if (props.selectedNode) all = nodes.filter((n) => isDescendant(n, props.selectedNode!, nodes));
-    }
+    // Field mode operates within the ONE selected card — manual clicks add a field from that
+    // card (auto-discovery covers the rest). (Reverted the cross-card expansion, ADR 0009.)
+    const all =
+      fieldMode && props.selectedNode
+        ? nodes.filter((n) => isDescendant(n, props.selectedNode!, nodes))
+        : nodes;
     // Sort largest-first so small elements paint last (on top) and win the hover
     // hit-test. In field mode we must NOT cap to the largest boxes — small details
     // like price/mileage are exactly what the user needs to click, and hover-only
@@ -283,7 +288,7 @@ export function BuilderView(props: BuilderProps) {
       .filter((n) => n.width >= 6 && n.height >= 6)
       .sort((a, b) => b.width * b.height - a.width * a.height);
     return fieldMode ? eligible : eligible.slice(0, 220);
-  }, [props.pageSession, props.pickMode, props.selectedNode, matchedNodeIds, domNodeById]);
+  }, [props.pageSession, props.pickMode, props.selectedNode]);
 
   const fieldNodes = useMemo(() => {
     if (!props.pageSession || !props.selectedNode) return [];
@@ -291,6 +296,70 @@ export function BuilderView(props: BuilderProps) {
       isDescendant(n, props.selectedNode!, props.pageSession!.domNodes)
     );
   }, [props.pageSession, props.selectedNode]);
+
+  // Auto-discover the selected card's fields (ADR 0009): list every extractable value inside
+  // the card — innermost text (title, price), links, images — with its value, so the user
+  // ticks what to keep instead of hunting element by element. List-shape only (a single-page
+  // "card" is the whole body; that flow keeps the manual picker).
+  const discoveredFields = useMemo<FieldCandidate[]>(() => {
+    if (props.recipeShape === "single" || !props.selectedNode || fieldNodes.length === 0) return [];
+    const all = props.pageSession?.domNodes ?? [];
+    // Innermost text holder: text present and no descendant within the card also has text.
+    const hasTextDescendant = (n: DomNode) =>
+      fieldNodes.some(
+        (d) => d.nodeId !== n.nodeId && (d.text ?? "").trim() !== "" && isDescendant(d, n, all)
+      );
+    const nameFor = (n: DomNode, extract: ExtractType, idx: number) => {
+      const a = n.attrs;
+      const hint =
+        a.itemprop ||
+        a["data-testid"] ||
+        a["aria-label"] ||
+        n.classes.find((c) =>
+          /title|name|price|cost|amount|date|time|location|place|desc|label|brand|model|rating|image|img|photo|link|url/i.test(c)
+        );
+      const base = hint ? slugifyName(hint) : extract === "href" ? "link" : extract === "src" ? "image" : "field";
+      return base || `field_${idx + 1}`;
+    };
+    const out: FieldCandidate[] = [];
+    fieldNodes.forEach((n, idx) => {
+      const text = (n.text ?? "").trim();
+      if (text && !hasTextDescendant(n)) {
+        out.push({ key: `${n.nodeId}:text`, nodeId: n.nodeId, extract: "text", label: "Text", value: text, suggestedName: nameFor(n, "text", idx) });
+      }
+      if (n.tag === "a" && n.attrs.href) {
+        out.push({ key: `${n.nodeId}:href`, nodeId: n.nodeId, extract: "href", label: "Link", value: n.attrs.href, suggestedName: nameFor(n, "href", idx) });
+      }
+      if (n.tag === "img" && n.attrs.src) {
+        out.push({ key: `${n.nodeId}:src`, nodeId: n.nodeId, extract: "src", label: "Image", value: n.attrs.src, suggestedName: nameFor(n, "src", idx) });
+      }
+    });
+    // Drop empties/dupes by value+type, order by position, cap to stay scannable.
+    const seen = new Set<string>();
+    const byId = new Map(all.map((d) => [d.nodeId, d] as const));
+    return out
+      .filter((c) => {
+        const k = `${c.label}:${c.value}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .sort((a, b) => {
+        const na = byId.get(a.nodeId)!;
+        const nb = byId.get(b.nodeId)!;
+        return na.y - nb.y || na.x - nb.x;
+      })
+      .slice(0, 15);
+  }, [props.recipeShape, props.selectedNode, props.pageSession, fieldNodes]);
+
+  // Tick state + name overrides for the discovery table; reset when the card changes.
+  const [pickedFieldKeys, setPickedFieldKeys] = useState<Record<string, boolean>>({});
+  const [fieldNameOverrides, setFieldNameOverrides] = useState<Record<string, string>>({});
+  const selectedNodeId = props.selectedNode?.nodeId ?? null;
+  useEffect(() => {
+    setPickedFieldKeys({});
+    setFieldNameOverrides({});
+  }, [selectedNodeId]);
 
   // The values actually present on the picked element, as friendly choices (ADR 0009).
   // Only non-empty ones, no developer terms; falls back to Text so there's always a choice.
@@ -1102,6 +1171,81 @@ export function BuilderView(props: BuilderProps) {
               </p>
             ) : null}
 
+            {/* Auto-discovered fields inside the selected card (ADR 0009): tick the ones to
+                collect. The primary way to map fields — no element-by-element hunting. */}
+            {!props.fieldSelector && discoveredFields.length > 0 ? (
+              <Card className="card-pad" style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 10 }}>
+                  Found these in the item — <strong style={{ color: "var(--text-primary)" }}>tick what to collect</strong>:
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {discoveredFields.map((c) => {
+                    const on = !!pickedFieldKeys[c.key];
+                    const name = fieldNameOverrides[c.key] ?? c.suggestedName;
+                    return (
+                      <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) =>
+                            setPickedFieldKeys((p) => ({ ...p, [c.key]: e.target.checked }))
+                          }
+                          style={{ flexShrink: 0, cursor: "pointer" }}
+                        />
+                        <input
+                          className="input input-sm"
+                          value={name}
+                          onChange={(e) => setFieldNameOverrides((p) => ({ ...p, [c.key]: e.target.value }))}
+                          disabled={!on}
+                          style={{ width: 110, flexShrink: 0, opacity: on ? 1 : 0.5 }}
+                        />
+                        <span
+                          title={c.value}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: 12,
+                            color: "var(--text-secondary)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          {c.value}
+                        </span>
+                        <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-muted)", flexShrink: 0 }}>
+                          {c.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon="plus"
+                  style={{ marginTop: 12 }}
+                  disabled={!discoveredFields.some((c) => pickedFieldKeys[c.key]) || props.selectorBusy}
+                  onClick={() => {
+                    const picks = discoveredFields
+                      .filter((c) => pickedFieldKeys[c.key])
+                      .map((c) => ({
+                        nodeId: c.nodeId,
+                        extract: c.extract,
+                        value: c.value,
+                        name: (fieldNameOverrides[c.key] ?? c.suggestedName).trim() || c.suggestedName
+                      }));
+                    props.onAddDiscoveredFields(picks);
+                  }}
+                >
+                  {props.selectorBusy ? "Adding…" : "Add selected fields"}
+                </Button>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+                  Missing something? Click it in the page to add it manually.
+                </p>
+              </Card>
+            ) : null}
+
             {props.fieldSelector ? (
               <Card className="card-pad" style={{ marginBottom: 12, background: "var(--accent-softer)", border: "1px solid var(--accent-soft)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -1161,16 +1305,6 @@ export function BuilderView(props: BuilderProps) {
                   </div>
                 </div>
                 <FieldSample busy={props.fieldSampleBusy} value={props.fieldSample} />
-
-                {/* No selector shown — fix a wrong column by example, not by editing code
-                    (ADR 0009). Only meaningful when there are multiple cards to compare. */}
-                {props.recipeShape !== "single" && (props.selectorResult?.matchCount ?? 0) > 1 ? (
-                  <p style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.45, marginTop: 8 }}>
-                    Wrong in some rows?{" "}
-                    <strong style={{ color: "var(--text-secondary)" }}>Click the right value in another card</strong>
-                    {props.fieldExampleIds.length > 1 ? ` · ${props.fieldExampleIds.length} examples` : ""}.
-                  </p>
-                ) : null}
 
                 <Button
                   variant="primary"

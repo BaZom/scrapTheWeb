@@ -280,10 +280,9 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
     }
 
     case "fields_added": {
-      // Commit one or more fields from a single picked element (ADR 0009): e.g. a linked
-      // title yields both a Text and a Link field. Dedupe by name, merge samples, clear the
-      // editor. No-op without a selector or any named field.
-      if (!state.fieldSelector) return state;
+      // Commit one or more fields at once (ADR 0009): from the auto-discovery table (each
+      // carries its own selector) or from a single picked element (a linked title → Text +
+      // Link). Dedupe by name, merge samples, clear any open editor. No-op if none named.
       const incoming = action.fields.filter((f) => f.name.trim());
       if (incoming.length === 0) return state;
       const incomingNames = new Set(incoming.map((f) => f.name));

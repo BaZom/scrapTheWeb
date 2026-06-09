@@ -188,6 +188,31 @@ panel.
 makes extracting all rows cheap, and showing `rows[0]` needs no API change; revisit only if
 extraction of huge pages is felt.
 
+### Auto-discover a card's fields (replaces cross-card field picking)
+
+The cross-card field flow (click the same detail in another card) was confusing — after
+picking an item the user was pushed to pick fields *across all matched cards*. What's wanted
+is the opposite: **click one card → see its fields, with values, and tick what to keep.**
+
+**Decision.** When an item is selected (list shape), enumerate the card's extractable values
+**client-side** from `domNodes` (descendants of `selectedNode`) and show a **"Fields in this
+item" table** in the right panel — each row a candidate (`[✓] name | value | Text/Link/Image`):
+- **Text** = innermost text holder (text present, no descendant within the card also has
+  text) — the title `<h2>`, the price `<span>`, not the wrapping div.
+- **Link** = `<a>` with `href`; **Image** = `<img>` with `src`. A linked title offers both.
+- Suggested names from `itemprop` / `data-testid` / `aria-label` / a meaningful class token,
+  else generic; editable. De-duped by value, ordered by position, capped at 15.
+
+Ticking + "Add selected fields" generates each one's **relative selector** via the existing
+`/selector` flow (parallel) and commits them with `fields_added` (its `fieldSelector` guard
+was dropped — a batch add carries its own selectors). The cross-card overlay expansion and
+its `field_example_added` / `field_selector_inferred` usage are removed; field-mode overlays
+revert to the **single selected card**, where a manual click is the fallback for anything the
+discovery missed. Single-record pages keep the manual picker (their "card" is the whole body).
+
+**Rejected:** auto-adding all discovered fields (the user should choose); a backend
+field-detector (client-side enumeration over the captured DOM nodes is enough and instant).
+
 ### Concepts to look up (follow-up)
 
 - **Mode affordances** — when a single canvas serves two intents (pick items vs map fields),

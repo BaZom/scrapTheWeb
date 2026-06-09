@@ -465,10 +465,17 @@ describe("fields_added (multi-attribute from one element)", () => {
     expect(s.fields[0].selector).toBe("a.title");
   });
 
-  it("is a no-op without a selector", () => {
-    const s = { ...base, fieldSelector: null };
-    expect(
-      builderReducer(s, { type: "fields_added", fields: [{ name: "x", selector: "y", extract: "text" }], samples: {} })
-    ).toBe(s);
+  it("appends even with no open editor (auto-discovery commits a batch)", () => {
+    const s = { ...base, fieldSelector: null, fields: [] };
+    const out = builderReducer(s, {
+      type: "fields_added",
+      fields: [{ name: "title", selector: "a.title", extract: "text" }],
+      samples: {}
+    });
+    expect(out.fields.map((f) => f.name)).toEqual(["title"]);
+  });
+
+  it("is a no-op when no field is named", () => {
+    expect(builderReducer(base, { type: "fields_added", fields: [], samples: {} })).toBe(base);
   });
 });

@@ -589,6 +589,44 @@ export default function Home() {
   // Commit the picked element as one or more fields (ADR 0009): the user can take several
   // values from the same element (e.g. a linked title → Text + Link). The first extract uses
   // the typed name; extras get a readable suffix. The live sample applies to the first.
+  // Auto-discovery commit (ADR 0009): the user ticked fields in the card-fields table. For
+  // each, generate its relative selector (parallel, reusing the existing /selector flow),
+  // then add them all at once with their preview values as samples. Names are de-duplicated.
+  async function handleAddDiscoveredFields(
+    picks: { nodeId: string; extract: ExtractType; name: string; value: string }[]
+  ) {
+    if (!session || !pageSession || !selectorResult || picks.length === 0) return;
+    setSelectorBusy(true);
+    setError(null);
+    try {
+      const resolved = await Promise.all(
+        picks.map((pick) =>
+          generateSelector(pageSession.sessionId, pick.nodeId, session.access_token, selectorResult.selector)
+            .then((sel) => ({ pick, selector: sel.selector }))
+            .catch(() => null)
+        )
+      );
+      const seen = new Set<string>();
+      const fields: { name: string; selector: string; extract: ExtractType }[] = [];
+      const samples: Record<string, string> = {};
+      for (const item of resolved) {
+        if (!item) continue;
+        let name = item.pick.name.trim() || "field";
+        let unique = name;
+        let n = 2;
+        while (seen.has(unique)) unique = `${name}_${n++}`;
+        seen.add(unique);
+        fields.push({ name: unique, selector: item.selector, extract: item.pick.extract });
+        if (item.pick.value) samples[unique] = item.pick.value;
+      }
+      if (fields.length > 0) dispatch({ type: "fields_added", fields, samples });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the selected fields");
+    } finally {
+      setSelectorBusy(false);
+    }
+  }
+
   function addFields(extracts: ExtractType[]) {
     if (!fieldSelector || extracts.length === 0) return;
     const base = fieldName.trim();
@@ -742,6 +780,7 @@ export default function Home() {
       fields,
       onFieldsChange: (next: PreviewField[]) => dispatch({ type: "fields_changed", fields: next }),
       onAddFields: addFields,
+      onAddDiscoveredFields: handleAddDiscoveredFields,
       fieldSample,
       fieldSampleBusy,
       fieldSamples,
