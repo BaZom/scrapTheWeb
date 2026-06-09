@@ -297,6 +297,17 @@ recipe** — the **saved run still extracts from freshly-fetched HTML** (`recipe
 unchanged), which is where full fidelity and real data matter. Preview answers "did I pick
 the right things?"; the run answers "what's actually on the live site now?"
 
+**The actual bottleneck (found by profiling, not guessing):** it wasn't the HTML parse at
+all — it was `generate_selector` in **relative** mode. `_is_descendant` rebuilt the full
+`nodeId → node` map on every call, so `_matching_descendants` was **O(nodes²)**, and the
+relative scoring called it **candidates × containers** times. On a 600-node page one relative
+selector took ~2.6 s; a 3-field preview took ~8 s. Two behaviour-preserving fixes (49 tests
+unchanged): (1) build the id map once and pass it to `_is_descendant` (O(nodes²) → O(nodes·
+depth)); (2) precompute each container's descendants **once per call** and match candidates
+against them (`_descendants_by_container` + `_select_within`), removing the candidates factor.
+Result: 8 s → ~16 ms (50 cards), ~2 s → ~67 ms (200 cards). The snapshot path then has nothing
+heavy left.
+
 **Rejected:** caching the parsed DOM tree (ADR 0008's deferred follow-up) — it would speed
 the re-parse but keep the N selector calls and the S3 dependency; extracting from the
 snapshot removes all three at once. Client-side extraction in the browser — rejected for the

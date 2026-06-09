@@ -233,27 +233,27 @@ def _infer_relative_selector(
         for candidate in _relative_path_candidates(node, container, node_by_id, nodes)
     )
 
+    # Each container's descendants, computed once and reused across all candidates.
+    descendants = _descendants_by_container(container_ids, nodes, node_by_id)
+
     scored: list[tuple[tuple[int, int, int], str]] = []
     seen: set[str] = set()
     for selector, strategy in candidates:
         if selector in seen:
             continue
         seen.add(selector)
-        # Matched descendant ids per container, computed once and reused below.
-        descendants_by_container = {
-            container["nodeId"]: {
-                n["nodeId"] for n in _matching_descendants(container, nodes, selector)
-            }
-            for container in container_nodes
+        matched_by_container = {
+            cid: {node["nodeId"] for node in _select_within(descs, selector, node_by_id)}
+            for cid, descs in descendants.items()
         }
         # Every example cell must be matched within its own container.
         covers_all = all(
-            node["nodeId"] in descendants_by_container.get(container["nodeId"], set())
+            node["nodeId"] in matched_by_container.get(container["nodeId"], set())
             for node, container in paired
         )
         if not covers_all:
             continue
-        per_container_counts = [len(ids) for ids in descendants_by_container.values()]
+        per_container_counts = [len(ids) for ids in matched_by_container.values()]
         exact_bonus = 0 if all(count == 1 for count in per_container_counts) else 1
         scored.append(((exact_bonus, _strategy_rank(strategy), len(selector)), selector))
 
@@ -268,7 +268,7 @@ def _infer_relative_selector(
     matched_ids = [
         node["nodeId"]
         for container in container_nodes
-        for node in _matching_descendants(container, nodes, selector)
+        for node in _select_within(descendants[container["nodeId"]], selector, node_by_id)
     ]
     return {
         "selector": selector,
@@ -295,14 +295,20 @@ def _generate_relative_selector(
     candidates.extend(_tag_candidate(selected))
     candidates.extend(_relative_path_candidates(selected, selected_container, node_by_id, nodes))
 
+    # Each container's descendants, computed once and reused for every candidate (avoids the
+    # O(candidates × containers × nodes) re-derivation that made this slow).
+    descendants = _descendants_by_container(container_ids, nodes, node_by_id)
+    selected_descendants = descendants[selected_container["nodeId"]]
+
     scored: list[tuple[tuple[int, int, int], str, str, int]] = []
     for selector, strategy in candidates:
         per_container_counts = [
-            len(_matching_descendants(container, nodes, selector)) for container in container_nodes
+            len(_select_within(descendants[container["nodeId"]], selector, node_by_id))
+            for container in container_nodes
         ]
         if not per_container_counts or per_container_counts[0] < 1:
             continue
-        selected_matches = _matching_descendants(selected_container, nodes, selector)
+        selected_matches = _select_within(selected_descendants, selector, node_by_id)
         if selected["nodeId"] not in {node["nodeId"] for node in selected_matches}:
             continue
         exact_bonus = 0 if all(count == 1 for count in per_container_counts) else 1
@@ -315,14 +321,14 @@ def _generate_relative_selector(
     else:
         selector = _relative_path_candidates(selected, selected_container, node_by_id, nodes)[-1][0]
         strategy = "relative_fallback_path"
-        match_count = len(_matching_descendants(selected_container, nodes, selector))
+        match_count = len(_select_within(selected_descendants, selector, node_by_id))
 
     # The relative selector matches one cell per container; surface every match across
     # all containers so the UI can outline the full extracted column (ADR 0007).
     matched_ids = [
         node["nodeId"]
         for container in container_nodes
-        for node in _matching_descendants(container, nodes, selector)
+        for node in _select_within(descendants[container["nodeId"]], selector, node_by_id)
     ]
     return {
         "selector": selector,
@@ -346,21 +352,56 @@ def _matching_nodes(dom_nodes: list[dict[str, Any]], selector: str) -> list[dict
 
 
 def _matching_descendants(
-    container: dict[str, Any], nodes: list[dict[str, Any]], selector: str
+    container: dict[str, Any],
+    nodes: list[dict[str, Any]],
+    selector: str,
+    node_by_id: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    # Build the id map once (was rebuilt per node inside _is_descendant — O(nodes²)); callers
+    # in a hot loop can pass a shared one to skip even this.
+    ids = node_by_id if node_by_id is not None else {node["nodeId"]: node for node in nodes}
     descendant_nodes = [
         node
         for node in nodes
-        if node["nodeId"] != container["nodeId"]
-        and _is_descendant(node, container, nodes)
+        if node["nodeId"] != container["nodeId"] and _is_descendant(node, container, ids)
     ]
     return _matching_nodes(descendant_nodes, selector)
 
 
+def _descendants_by_container(
+    container_ids: set[str],
+    nodes: list[dict[str, Any]],
+    node_by_id: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    # Group every node under each of its container ancestors in ONE pass (O(nodes·depth)),
+    # so the relative-selector scoring doesn't re-derive descendants per candidate.
+    result: dict[str, list[dict[str, Any]]] = {cid: [] for cid in container_ids}
+    for node in nodes:
+        parent_id = node.get("parentNodeId")
+        current = node_by_id.get(parent_id) if isinstance(parent_id, str) else None
+        while current is not None:
+            if current["nodeId"] in container_ids:
+                result[current["nodeId"]].append(node)
+            parent_id = current.get("parentNodeId")
+            current = node_by_id.get(parent_id) if isinstance(parent_id, str) else None
+    return result
+
+
+def _select_within(
+    subset: list[dict[str, Any]], selector: str, node_by_id: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    # Match a selector against an already-normalized node subset (parse once, no re-normalize).
+    segments = [_parse_segment(part.strip()) for part in selector.split(">")]
+    if not segments:
+        return []
+    return [node for node in subset if _matches_selector_chain(node, segments, node_by_id)]
+
+
 def _is_descendant(
-    node: dict[str, Any], ancestor: dict[str, Any], nodes: list[dict[str, Any]]
+    node: dict[str, Any],
+    ancestor: dict[str, Any],
+    node_by_id: dict[str, dict[str, Any]],
 ) -> bool:
-    node_by_id = {candidate["nodeId"]: candidate for candidate in nodes}
     current = node
     while isinstance(current.get("parentNodeId"), str):
         parent = node_by_id.get(current["parentNodeId"])
