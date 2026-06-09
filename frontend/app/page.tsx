@@ -519,6 +519,13 @@ export default function Home() {
     setFieldSample(null);
   }
 
+  // Manual shape override (ADR 0005 follow-up): the reducer clears the now-invalid mapping;
+  // we also drop the live field sample, which lives outside the reducer.
+  function handleShapeChange(shape: "list" | "single") {
+    dispatch({ type: "shape_changed", shape });
+    setFieldSample(null);
+  }
+
   // Stepper navigation: clicking an earlier step rewinds the workflow by clearing
   // everything downstream of it (the reducer owns the per-shape clearing rules).
   // `currentStep` is derived from the cleared slices, so the stepper updates itself.
@@ -629,6 +636,7 @@ export default function Home() {
       selectorResult,
       selectorBusy,
       recipeShape,
+      onShapeChange: handleShapeChange,
       pickMode,
       onPickModeChange: (mode: "container" | "field") => dispatch({ type: "pick_mode_changed", mode }),
       pickerView,

@@ -70,6 +70,7 @@ export type BuilderAction =
   | { type: "field_attribute_changed"; attribute: string }
   | { type: "field_added"; sample: string | null }
   | { type: "fields_changed"; fields: PreviewField[] }
+  | { type: "shape_changed"; shape: RecipeShape }
   | { type: "pick_mode_changed"; mode: PickMode }
   | { type: "step_navigated"; target: number }
   | { type: "preview_succeeded"; preview: PreviewResult }
@@ -112,6 +113,19 @@ export const initialBuilderState: BuilderState = {
   imageSize: null
 };
 
+// The flow slices that depend purely on the page shape, shared by render_succeeded
+// (auto-detection) and shape_changed (manual override) so the two can't drift:
+// - single: the whole body is the (synthetic) container — jump straight to field mode;
+// - list: no container yet — the user picks a repeating item in container mode.
+function shapeFlow(shape: RecipeShape): Pick<BuilderState, "recipeShape" | "selectorResult" | "pickMode"> {
+  const single = shape === "single";
+  return {
+    recipeShape: shape,
+    selectorResult: single ? SINGLE_BODY_SELECTOR : null,
+    pickMode: single ? "field" : "container"
+  };
+}
+
 // Clears the per-render flow while keeping inputs the user shouldn't have to re-enter
 // (URL, recipe name, and the field-editor's name/extract/attribute defaults). Mirrors the
 // old resetBuilderState exactly — including that it does NOT clear fieldSamples here only
@@ -151,11 +165,7 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
       return {
         ...base,
         pageSession: action.pageSession,
-        recipeShape: strong ? "list" : "single",
-        // Single-record pages skip the "pick an item" step: body is the container and we
-        // jump straight to field mode.
-        selectorResult: strong ? null : SINGLE_BODY_SELECTOR,
-        pickMode: strong ? "container" : "field",
+        ...shapeFlow(strong ? "list" : "single"),
         recipeName: state.recipeName.trim() || action.suggestedName
       };
     }
@@ -229,6 +239,28 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
       // extracted for a different set of fields. Clear it so a stale table can't show a
       // column the user just removed (matches field_added, which also clears preview).
       return { ...state, fields: action.fields, preview: null };
+
+    case "shape_changed": {
+      // Manual override when auto-detection (ADR 0005) guessed wrong — e.g. a single-item
+      // detail page with an incidental "similar ads" strip mis-read as a list, trapping the
+      // user in container mode. Flipping shape invalidates every downstream slice: the
+      // field selectors differ by shape (list = relative to the item; single = page-wide
+      // unique), so kept fields would be wrong. Clear them and the preview/save/run so the
+      // user re-maps cleanly. No-op if the shape is unchanged.
+      if (action.shape === state.recipeShape) return state;
+      return {
+        ...state,
+        ...shapeFlow(action.shape),
+        selectedNode: null,
+        fieldNode: null,
+        fieldSelector: null,
+        fields: [],
+        fieldSamples: {},
+        preview: null,
+        savedRecipe: null,
+        run: null
+      };
+    }
 
     case "pick_mode_changed":
       return { ...state, pickMode: action.mode };

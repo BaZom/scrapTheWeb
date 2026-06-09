@@ -103,5 +103,35 @@ outline are preserved.
 
 - A dedicated backend single-record renderer (body-as-container is sufficient for v1).
 - Multilingual consent/keyword coverage (tracked separately).
-- Letting the user override the detected shape from the UI (today it's automatic +
-  the manual layer as escape hatch).
+- ~~Letting the user override the detected shape from the UI~~ — **done**, see the
+  follow-up below.
+
+## Follow-up — manual shape override (2026-06-08)
+
+Auto-detection (score gate above) is right for the common case but can still misfire: a
+single-item **detail** page with an incidental repeated strip that scores ≥ 40 (e.g. a
+kleinanzeigen ad with a "similar ads" row) is read as a **list**, trapping the user in
+container mode where the candidate overlays replace general selection — preview then
+extracts the wrong repeats. The DOM-tree fallback existed but is a power-user escape, not
+a fix for "the tool guessed the wrong shape."
+
+**Decision.** A first-class **Page: List / Single** toggle in the builder controls
+(frontend-only — `frontend/app/components/builder-view.tsx`), wired through a new
+`shape_changed` reducer action (`frontend/lib/builder-reducer.ts`, tested). Auto-detection
+still seeds the initial shape; the toggle lets the user correct it.
+
+- **Reducer.** `shape_changed` reuses the same `shapeFlow(shape)` helper as
+  `render_succeeded`, so manual and automatic shape selection set the identical slices and
+  can't drift (single → synthetic `body` selector + field mode; list → no selector +
+  container mode). Because field-selector **semantics differ by shape** (list selectors are
+  relative to the chosen item; single selectors are page-wide unique — see "Single-record
+  flow" above), kept fields would be wrong after a flip, so the action clears the whole
+  downstream flow (selection, fields, samples, preview, saved recipe, run). It's a no-op
+  when the shape is unchanged, so an accidental click on the active segment costs nothing.
+- **Persistence.** `recipeShape` is already part of the draft's structural key (ADR 0007),
+  so an override persists immediately and survives a reload.
+
+**Rejected:** a confirm dialog before clearing the mapping — the flip is a deliberate,
+explicit action and the cleared state is trivially rebuilt; a prompt every time would be
+friction. Also rejected: trying to *migrate* existing fields across the flip — relative and
+page-wide selectors aren't interchangeable, so a "kept" field would silently mismatch.

@@ -51,6 +51,7 @@ export type BuilderProps = {
   selectorResult: SelectorResult | null;
   selectorBusy: boolean;
   recipeShape: "list" | "single";
+  onShapeChange: (shape: "list" | "single") => void;
   pickMode: "container" | "field";
   onPickModeChange: (mode: "container" | "field") => void;
   pickerView: "overlays" | "nodes";
@@ -331,6 +332,27 @@ export function BuilderView(props: BuilderProps) {
         </form>
 
         <div style={{ flex: 1 }} />
+
+        {/* Page shape: auto-detected on render (ADR 0005), overridable here for the case it
+            guesses wrong — e.g. a single-item page with an incidental repeated strip read as
+            a list. Flipping shape clears the in-progress mapping (selectors differ by shape). */}
+        {props.pageSession ? (
+          <span
+            style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}
+          >
+            Page
+          </span>
+        ) : null}
+        {props.pageSession ? (
+          <Segmented<"list" | "single">
+            value={props.recipeShape}
+            onChange={(v) => props.onShapeChange(v)}
+            options={[
+              { value: "list", icon: "list", label: "List" },
+              { value: "single", icon: "file", label: "Single" }
+            ]}
+          />
+        ) : null}
 
         {props.recipeShape !== "single" ? (
           <Segmented<"container" | "field">

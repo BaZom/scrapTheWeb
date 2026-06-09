@@ -298,6 +298,37 @@ describe("fields_changed", () => {
   });
 });
 
+describe("shape_changed", () => {
+  it("list → single seeds the body container, jumps to field mode, drops the flow", () => {
+    const s = builderReducer(deepListState(), { type: "shape_changed", shape: "single" });
+    expect(s.recipeShape).toBe("single");
+    expect(s.selectorResult).toEqual(SINGLE_BODY_SELECTOR);
+    expect(s.pickMode).toBe("field");
+    expect(s.selectedNode).toBeNull();
+    expect(s.fields).toEqual([]);
+    expect(s.fieldSamples).toEqual({});
+    expect(s.preview).toBeNull();
+    expect(s.savedRecipe).toBeNull();
+    expect(s.run).toBeNull();
+  });
+
+  it("single → list clears the body selector and returns to container mode", () => {
+    const single = { ...deepListState(), recipeShape: "single" as const, selectorResult: SINGLE_BODY_SELECTOR };
+    const s = builderReducer(single, { type: "shape_changed", shape: "list" });
+    expect(s.recipeShape).toBe("list");
+    expect(s.selectorResult).toBeNull();
+    expect(s.pickMode).toBe("container");
+    expect(s.selectedNode).toBeNull();
+    expect(s.fields).toEqual([]);
+    expect(s.preview).toBeNull();
+  });
+
+  it("is a no-op when the shape is unchanged (keeps the in-progress flow)", () => {
+    const state = deepListState();
+    expect(builderReducer(state, { type: "shape_changed", shape: "list" })).toBe(state);
+  });
+});
+
 describe("reset and restore", () => {
   it("reset clears the flow but preserves URL and field-editor defaults", () => {
     const s = builderReducer(
