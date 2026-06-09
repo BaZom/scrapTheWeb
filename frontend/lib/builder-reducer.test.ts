@@ -168,69 +168,6 @@ describe("container selection", () => {
     expect(s.pickMode).toBe("field");
   });
 
-  it("field_selector_resolved only defaults the name when it's empty", () => {
-    const withName = builderReducer(
-      { ...initialBuilderState, fieldName: "price", fieldNode: node("f1") },
-      { type: "field_selector_resolved", result: selector, defaultName: "auto" }
-    );
-    expect(withName.fieldName).toBe("price");
-    const blank = builderReducer(
-      { ...initialBuilderState, fieldName: "", fieldNode: node("f1") },
-      { type: "field_selector_resolved", result: selector, defaultName: "auto" }
-    );
-    expect(blank.fieldName).toBe("auto");
-  });
-});
-
-// ---- adding fields --------------------------------------------------------
-
-describe("field_added", () => {
-  const base: BuilderState = {
-    ...initialBuilderState,
-    fieldName: "price",
-    fieldExtract: "text",
-    fieldSelector: { selector: ".price", matchCount: 1, strategy: "x", matchedNodeIds: [] }
-  };
-
-  it("appends the field, stores its sample, and clears the editor", () => {
-    const s = builderReducer(base, { type: "field_added", sample: "£5" });
-    expect(s.fields).toEqual([{ name: "price", selector: ".price", extract: "text" }]);
-    expect(s.fieldSamples).toEqual({ price: "£5" });
-    expect(s.fieldName).toBe("");
-    expect(s.fieldSelector).toBeNull();
-    expect(s.fieldNode).toBeNull();
-  });
-
-  it("replaces a field of the same name rather than duplicating", () => {
-    const withExisting = { ...base, fields: [{ name: "price", selector: ".old", extract: "text" as const }] };
-    const s = builderReducer(withExisting, { type: "field_added", sample: null });
-    expect(s.fields).toHaveLength(1);
-    expect(s.fields[0].selector).toBe(".price");
-  });
-
-  it("includes the attribute key only for attribute extraction", () => {
-    const attr = builderReducer(
-      { ...base, fieldExtract: "attribute", fieldAttribute: " data-id " },
-      { type: "field_added", sample: null }
-    );
-    expect(attr.fields[0]).toEqual({
-      name: "price",
-      selector: ".price",
-      extract: "attribute",
-      attribute: "data-id"
-    });
-  });
-
-  it("is a no-op when there is no selector or the name is blank", () => {
-    expect(builderReducer({ ...base, fieldSelector: null }, { type: "field_added", sample: null })).toEqual({
-      ...base,
-      fieldSelector: null
-    });
-    expect(builderReducer({ ...base, fieldName: "  " }, { type: "field_added", sample: null })).toEqual({
-      ...base,
-      fieldName: "  "
-    });
-  });
 });
 
 // ---- step navigation (the most desync-prone transition) -------------------
@@ -248,11 +185,10 @@ describe("step_navigated (list)", () => {
     expect(s.run).toBeNull();
   });
 
-  it("back to step 2 keeps fields but clears the field editor + preview", () => {
+  it("back to step 2 keeps fields but returns to field mode + clears preview", () => {
     const s = builderReducer(deepListState(), { type: "step_navigated", target: 2 });
     expect(s.fields).toHaveLength(2);
     expect(s.selectorResult).toEqual(selector);
-    expect(s.fieldNode).toBeNull();
     expect(s.pickMode).toBe("field");
     expect(s.preview).toBeNull();
     expect(s.savedRecipe).toBeNull();
@@ -330,16 +266,14 @@ describe("shape_changed", () => {
 });
 
 describe("reset and restore", () => {
-  it("reset clears the flow but preserves URL and field-editor defaults", () => {
+  it("reset clears the flow but preserves the URL", () => {
     const s = builderReducer(
-      { ...deepListState(), renderUrl: "https://x.test", fieldName: "kept", fieldExtract: "href" },
+      { ...deepListState(), renderUrl: "https://x.test" },
       { type: "reset" }
     );
     expect(s.pageSession).toBeNull();
     expect(s.fields).toEqual([]);
     expect(s.renderUrl).toBe("https://x.test");
-    expect(s.fieldName).toBe("kept");
-    expect(s.fieldExtract).toBe("href");
   });
 
   it("draft_restored rehydrates the persisted slices", () => {
@@ -412,21 +346,12 @@ describe("teach-by-example selection", () => {
     expect(s.pickMode).toBe("container");
   });
 
-  it("picking a field clears any prior field selector", () => {
-    const s = builderReducer(deepListState(), { type: "field_selecting", node: node("f1") });
-    expect(s.fieldNode?.nodeId).toBe("f1");
-    expect(s.fieldSelector).toBeNull();
-  });
 });
 
-describe("fields_added (multi-attribute from one element)", () => {
-  const base: BuilderState = {
-    ...initialBuilderState,
-    fieldName: "title",
-    fieldSelector: { selector: "a.title", matchCount: 3, strategy: "x", matchedNodeIds: [] }
-  };
+describe("fields_added (commit selected fields)", () => {
+  const base: BuilderState = { ...initialBuilderState };
 
-  it("appends several fields from one element and clears the editor", () => {
+  it("appends several fields at once (e.g. a linked title → text + link)", () => {
     const s = builderReducer(base, {
       type: "fields_added",
       fields: [
@@ -437,9 +362,6 @@ describe("fields_added (multi-attribute from one element)", () => {
     });
     expect(s.fields.map((f) => f.name)).toEqual(["title", "title_link"]);
     expect(s.fieldSamples).toEqual({ title: "Hello" });
-    expect(s.fieldSelector).toBeNull();
-    expect(s.fieldNode).toBeNull();
-    expect(s.fieldName).toBe("");
   });
 
   it("dedupes by name against existing fields", () => {
@@ -456,13 +378,11 @@ describe("fields_added (multi-attribute from one element)", () => {
     expect(s.fields[0].selector).toBe("a.title");
   });
 
-  it("appends even with no open editor (auto-discovery commits a batch)", () => {
-    const s = { ...base, fieldSelector: null, fields: [] };
-    const out = builderReducer(s, {
-      type: "fields_added",
-      fields: [{ name: "title", selector: "a.title", extract: "text" }],
-      samples: {}
-    });
+  it("commits a batch onto an empty field set", () => {
+    const out = builderReducer(
+      { ...base, fields: [] },
+      { type: "fields_added", fields: [{ name: "title", selector: "a.title", extract: "text" }], samples: {} }
+    );
     expect(out.fields.map((f) => f.name)).toEqual(["title"]);
   });
 

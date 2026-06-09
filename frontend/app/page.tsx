@@ -86,11 +86,6 @@ export default function Home() {
     containerExampleIds,
     recipeShape,
     pickMode,
-    fieldNode,
-    fieldSelector,
-    fieldName,
-    fieldExtract,
-    fieldAttribute,
     fields,
     fieldSamples,
     preview,
@@ -99,11 +94,9 @@ export default function Home() {
     run,
     imageSize
   } = builder;
-  // Kept outside the reducer: the screenshot blob URL (side-effect lifecycle), the live
-  // field sample (derived by an effect), and the canvas view toggle.
+  // Kept outside the reducer: the screenshot blob URL (side-effect lifecycle) and the
+  // canvas view toggle.
   const [screenshotObjectUrl, setScreenshotObjectUrl] = useState<string | null>(null);
-  const [fieldSample, setFieldSample] = useState<string | null>(null);
-  const [fieldSampleBusy, setFieldSampleBusy] = useState(false);
   const [pickerView, setPickerView] = useState<"overlays" | "nodes">("overlays");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -367,26 +360,6 @@ export default function Home() {
     fieldSamples
   ]);
 
-  // ----- Live sample for the field currently being mapped -----
-  // Show the value of the element the user ACTUALLY clicked, read straight from that
-  // node — not row[0] of a preview. A relative field selector matches one element per
-  // card, so previewing "the first card" showed a different listing's value than the
-  // one clicked ("text from a previous listing"). Reading the clicked node is instant
-  // and always matches what was selected.
-  useEffect(() => {
-    if (!fieldNode) {
-      setFieldSample(null);
-      return;
-    }
-    const attrs = fieldNode.attrs ?? {};
-    let value: string;
-    if (fieldExtract === "href") value = attrs.href ?? "";
-    else if (fieldExtract === "src") value = attrs.src ?? "";
-    else if (fieldExtract === "attribute") value = attrs[fieldAttribute.trim()] ?? "";
-    else value = fieldNode.text ?? ""; // text / html (domNodes carry text, not innerHTML)
-    setFieldSample(value);
-  }, [fieldNode, fieldExtract, fieldAttribute]);
-
   function applyWorkspaceData([d, r, u]: [Dashboard, Recipe[], ExtractionRun[]]) {
     setDashboard(d);
     setRecipes(r);
@@ -431,7 +404,6 @@ export default function Home() {
   function resetBuilderState() {
     dispatch({ type: "reset" });
     setScreenshotObjectUrl(null);
-    setFieldSample(null);
   }
 
   // ----- Builder handlers -----
@@ -482,33 +454,6 @@ export default function Home() {
     }
   }
 
-  async function handleFieldNodeSelect(node: DomNode) {
-    if (!session || !pageSession || !selectorResult) return;
-    dispatch({ type: "field_selecting", node });
-    setSelectorBusy(true);
-    setError(null);
-    try {
-      // List: selector relative to the chosen item. Single: page-wide unique selector
-      // (the "container" is the whole body, so a relative selector would be meaningless).
-      const result =
-        recipeShape === "single"
-          ? await generateSelector(pageSession.sessionId, node.nodeId, session.access_token, undefined, {
-              single: true
-            })
-          : await generateSelector(
-              pageSession.sessionId,
-              node.nodeId,
-              session.access_token,
-              selectorResult.selector
-            );
-      dispatch({ type: "field_selector_resolved", result, defaultName: defaultFieldName(node) });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Field selector failed");
-    } finally {
-      setSelectorBusy(false);
-    }
-  }
-
   // Teach-by-example (ADR 0009): the user clicked another item we missed. Re-infer the item
   // selector to cover every example so far; the count + outline grow. No CSS surfaced.
   async function handleAddItemExample(node: DomNode) {
@@ -535,9 +480,6 @@ export default function Home() {
     if (first) handleNodeSelect(first);
   }
 
-  // Commit the picked element as one or more fields (ADR 0009): the user can take several
-  // values from the same element (e.g. a linked title → Text + Link). The first extract uses
-  // the typed name; extras get a readable suffix. The live sample applies to the first.
   // Preview records (ADR 0009): the ONLY thing that extracts. Takes the fields the user
   // selected (table ticks and/or screenshot clicks), generates each one's relative selector
   // (parallel, reusing /selector), commits them as the recipe fields, then extracts ALL
@@ -587,29 +529,9 @@ export default function Home() {
     }
   }
 
-  function addFields(extracts: ExtractType[]) {
-    if (!fieldSelector || extracts.length === 0) return;
-    const base = fieldName.trim();
-    if (!base) {
-      setError("Field name is required");
-      return;
-    }
-    const suffix: Partial<Record<ExtractType, string>> = { href: "_link", src: "_image" };
-    const fields = extracts.map((extract, i) => ({
-      name: i === 0 ? base : `${base}${suffix[extract] ?? `_${extract}`}`,
-      selector: fieldSelector.selector,
-      extract
-    }));
-    const samples = fieldSample !== null ? { [fields[0].name]: fieldSample } : {};
-    dispatch({ type: "fields_added", fields, samples });
-    setFieldSample(null);
-  }
-
-  // Manual shape override (ADR 0005 follow-up): the reducer clears the now-invalid mapping;
-  // we also drop the live field sample, which lives outside the reducer.
+  // Manual shape override (ADR 0005 follow-up): the reducer clears the now-invalid mapping.
   function handleShapeChange(shape: "list" | "single") {
     dispatch({ type: "shape_changed", shape });
-    setFieldSample(null);
   }
 
   // Stepper navigation: clicking an earlier step rewinds the workflow by clearing
@@ -617,26 +539,6 @@ export default function Home() {
   // `currentStep` is derived from the cleared slices, so the stepper updates itself.
   function handleStepNavigate(target: number) {
     dispatch({ type: "step_navigated", target });
-    setFieldSample(null);
-  }
-
-  async function runPreview() {
-    if (!session || !pageSession || !selectorResult || fields.length === 0) return;
-    setPreviewBusy(true);
-    setError(null);
-    try {
-      const result = await previewPageSession(
-        pageSession.sessionId,
-        selectorResult.selector,
-        fields,
-        session.access_token
-      );
-      dispatch({ type: "preview_succeeded", preview: result });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Preview extraction failed");
-    } finally {
-      setPreviewBusy(false);
-    }
   }
 
   async function handleSaveRecipe() {
@@ -750,7 +652,6 @@ export default function Home() {
       renderBusy,
       error,
       onNodeSelect: handleNodeSelect,
-      onFieldNodeSelect: handleFieldNodeSelect,
       containerExampleIds,
       onAddItemExample: handleAddItemExample,
       onResetItemExamples: handleResetItemExamples
@@ -767,14 +668,7 @@ export default function Home() {
       recipeShape,
       pickMode,
       pickerView,
-      fieldNode,
-      fieldSelector,
-      fieldName,
-      fieldExtract,
-      fieldAttribute,
       fields,
-      fieldSample,
-      fieldSampleBusy,
       fieldSamples,
       preview,
       previewBusy,
@@ -899,13 +793,6 @@ export default function Home() {
       ) : null}
     </AppShell>
   );
-}
-
-function defaultFieldName(node: DomNode) {
-  if (node.tag === "a") return "detail_url";
-  if (node.tag === "img") return "image_url";
-  if (node.classes.some((c) => c.includes("price"))) return "price";
-  return node.tag;
 }
 
 function suggestedRecipeName(url: string, pageTitle: string | null) {

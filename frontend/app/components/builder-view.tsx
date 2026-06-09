@@ -93,7 +93,6 @@ export type BuilderProps = {
   renderBusy: boolean;
   error: string | null;
   onNodeSelect: (node: DomNode) => void;
-  onFieldNodeSelect: (node: DomNode) => void;
   // Teach-by-example (ADR 0009): once an item is picked, clicks add more examples to
   // broaden the match instead of re-picking; Reset starts over from the first example.
   containerExampleIds: string[];
@@ -1704,43 +1703,6 @@ function AccessBlockNotice({ block, url }: { block: AccessBlock; url: string }) 
           </div>
         </div>
       </Card>
-    </div>
-  );
-}
-
-function FieldSample({ busy, value }: { busy: boolean; value: string | null }) {
-  const empty = value !== null && value.trim() === "";
-  return (
-    <div
-      style={{
-        marginTop: 8,
-        padding: "6px 10px",
-        background: "white",
-        border: "1px solid var(--border)",
-        borderRadius: 6,
-        fontSize: 12,
-        color: empty ? "var(--text-muted)" : "var(--text-primary)",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        minHeight: 28
-      }}
-    >
-      <span
-        style={{
-          fontSize: 10,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-          color: "var(--text-muted)",
-          flexShrink: 0
-        }}
-      >
-        Sample
-      </span>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {busy ? "Extracting…" : value === null ? "—" : empty ? "(empty)" : value}
-      </span>
     </div>
   );
 }

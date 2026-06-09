@@ -33,11 +33,6 @@ export type BuilderState = {
   containerExampleIds: string[];
   recipeShape: RecipeShape;
   pickMode: PickMode;
-  fieldNode: DomNode | null;
-  fieldSelector: SelectorResult | null;
-  fieldName: string;
-  fieldExtract: ExtractType;
-  fieldAttribute: string;
   fields: PreviewField[];
   fieldSamples: Record<string, string>;
   preview: PreviewResult | null;
@@ -68,12 +63,6 @@ export type BuilderAction =
   | { type: "container_selector_resolved"; result: SelectorResult }
   | { type: "container_example_added"; node: DomNode }
   | { type: "container_selector_inferred"; result: SelectorResult }
-  | { type: "field_selecting"; node: DomNode }
-  | { type: "field_selector_resolved"; result: SelectorResult; defaultName: string }
-  | { type: "field_name_changed"; name: string }
-  | { type: "field_extract_changed"; extract: ExtractType }
-  | { type: "field_attribute_changed"; attribute: string }
-  | { type: "field_added"; sample: string | null }
   | { type: "fields_added"; fields: PreviewField[]; samples: Record<string, string> }
   | { type: "field_removed"; name: string }
   | { type: "fields_changed"; fields: PreviewField[] }
@@ -107,11 +96,6 @@ export const initialBuilderState: BuilderState = {
   containerExampleIds: [],
   recipeShape: "list",
   pickMode: "container",
-  fieldNode: null,
-  fieldSelector: null,
-  fieldName: "title",
-  fieldExtract: "text",
-  fieldAttribute: "",
   fields: [],
   fieldSamples: {},
   preview: null,
@@ -135,9 +119,7 @@ function shapeFlow(shape: RecipeShape): Pick<BuilderState, "recipeShape" | "sele
 }
 
 // Clears the per-render flow while keeping inputs the user shouldn't have to re-enter
-// (URL, recipe name, and the field-editor's name/extract/attribute defaults). Mirrors the
-// old resetBuilderState exactly — including that it does NOT clear fieldSamples here only
-// where the original didn't.
+// (URL, recipe name).
 function clearedFlow(state: BuilderState): BuilderState {
   return {
     ...state,
@@ -145,8 +127,6 @@ function clearedFlow(state: BuilderState): BuilderState {
     selectedNode: null,
     selectorResult: null,
     containerExampleIds: [],
-    fieldNode: null,
-    fieldSelector: null,
     fieldSamples: {},
     fields: [],
     preview: null,
@@ -187,8 +167,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         selectedNode: action.node,
         selectorResult: null,
         containerExampleIds: [action.node.nodeId],
-        fieldNode: null,
-        fieldSelector: null,
         fields: [],
         preview: null,
         savedRecipe: null,
@@ -218,55 +196,10 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
       // Set the re-inferred item selector without auto-advancing — the user is refining.
       return { ...state, selectorResult: action.result };
 
-    case "field_selecting":
-      return { ...state, fieldNode: action.node, fieldSelector: null };
-
-    case "field_selector_resolved":
-      return {
-        ...state,
-        fieldSelector: action.result,
-        fieldName: state.fieldName ? state.fieldName : action.defaultName
-      };
-
-    case "field_name_changed":
-      return { ...state, fieldName: action.name };
-
-    case "field_extract_changed":
-      return { ...state, fieldExtract: action.extract };
-
-    case "field_attribute_changed":
-      return { ...state, fieldAttribute: action.attribute };
-
-    case "field_added": {
-      const name = state.fieldName.trim();
-      // Invalid adds are a no-op; the component surfaces the "name required" error.
-      if (!state.fieldSelector || !name) return state;
-      const field: PreviewField = {
-        name,
-        selector: state.fieldSelector.selector,
-        extract: state.fieldExtract,
-        ...(state.fieldExtract === "attribute" ? { attribute: state.fieldAttribute.trim() } : {})
-      };
-      return {
-        ...state,
-        fields: [...state.fields.filter((f) => f.name !== name), field],
-        fieldSamples:
-          action.sample !== null
-            ? { ...state.fieldSamples, [name]: action.sample }
-            : state.fieldSamples,
-        fieldName: "",
-        fieldSelector: null,
-        fieldNode: null,
-        preview: null,
-        savedRecipe: null,
-        run: null
-      };
-    }
-
     case "fields_added": {
-      // Commit one or more fields at once (ADR 0009): from the auto-discovery table (each
-      // carries its own selector) or from a single picked element (a linked title → Text +
-      // Link). Dedupe by name, merge samples, clear any open editor. No-op if none named.
+      // Commit the selected fields at once (ADR 0009): from the discovery table and/or
+      // screenshot clicks, each carrying its own selector. Dedupe by name, merge samples.
+      // No-op if none named.
       const incoming = action.fields.filter((f) => f.name.trim());
       if (incoming.length === 0) return state;
       const incomingNames = new Set(incoming.map((f) => f.name));
@@ -274,9 +207,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         ...state,
         fields: [...state.fields.filter((f) => !incomingNames.has(f.name)), ...incoming],
         fieldSamples: { ...state.fieldSamples, ...action.samples },
-        fieldName: "",
-        fieldSelector: null,
-        fieldNode: null,
         preview: null,
         savedRecipe: null,
         run: null
@@ -314,8 +244,6 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         ...shapeFlow(action.shape),
         selectedNode: null,
         containerExampleIds: [],
-        fieldNode: null,
-        fieldSelector: null,
         fields: [],
         fieldSamples: {},
         preview: null,
@@ -396,14 +324,12 @@ function stepNavigated(state: BuilderState, target: number): BuilderState {
       selectedNode: null,
       selectorResult: null,
       containerExampleIds: [],
-      fieldNode: null,
-      fieldSelector: null,
       fields: [],
       fieldSamples: {},
       pickMode: "container"
     };
   } else if (target === 2) {
-    next = { ...next, fieldNode: null, fieldSelector: null, pickMode: "field" };
+    next = { ...next, pickMode: "field" };
   }
   if (target <= 2) next = { ...next, preview: null };
   return { ...next, savedRecipe: null, run: null };
