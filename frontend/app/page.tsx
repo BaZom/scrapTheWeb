@@ -536,6 +536,28 @@ export default function Home() {
     if (first) handleNodeSelect(first);
   }
 
+  // Teach-by-example for fields (ADR 0009): the user clicked the same detail in another
+  // card to fix the column. Re-infer the relative selector to cover every example cell.
+  async function handleAddFieldExample(node: DomNode) {
+    if (!session || !pageSession || !selectorResult) return;
+    const ids = [...fieldExampleIds, node.nodeId];
+    dispatch({ type: "field_example_added", node });
+    setSelectorBusy(true);
+    setError(null);
+    try {
+      const result = await inferSelector(pageSession.sessionId, ids, session.access_token, {
+        mode: "node",
+        // Single-record fields are page-wide; list fields are relative to the item.
+        containerSelector: recipeShape === "single" ? undefined : selectorResult.selector
+      });
+      dispatch({ type: "field_selector_inferred", result });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not include that example");
+    } finally {
+      setSelectorBusy(false);
+    }
+  }
+
   function addField() {
     if (!fieldSelector) return;
     if (!fieldName.trim()) {
@@ -709,7 +731,9 @@ export default function Home() {
       onFieldNodeSelect: handleFieldNodeSelect,
       containerExampleIds,
       onAddItemExample: handleAddItemExample,
-      onResetItemExamples: handleResetItemExamples
+      onResetItemExamples: handleResetItemExamples,
+      fieldExampleIds,
+      onAddFieldExample: handleAddFieldExample
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -720,6 +744,7 @@ export default function Home() {
       selectorResult,
       selectorBusy,
       containerExampleIds,
+      fieldExampleIds,
       recipeShape,
       pickMode,
       pickerView,

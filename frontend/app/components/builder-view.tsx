@@ -95,6 +95,9 @@ export type BuilderProps = {
   containerExampleIds: string[];
   onAddItemExample: (node: DomNode) => void;
   onResetItemExamples: () => void;
+  // Field teach-by-example: click the same detail in another card to fix that column.
+  fieldExampleIds: string[];
+  onAddFieldExample: (node: DomNode) => void;
 };
 
 function currentStep(props: BuilderProps) {
@@ -205,14 +208,51 @@ export function BuilderView(props: BuilderProps) {
     props.onAddItemExample(node);
   }
 
+  // The matched item-card a node lives in (walk up to the first ancestor in the match set),
+  // or null if it's outside every card. Used to tell field clicks apart (teach-by-example).
+  function matchedContainerIdOf(node: DomNode): string | null {
+    let current: DomNode | undefined = node;
+    while (current) {
+      if (matchedNodeIds.has(current.nodeId)) return current.nodeId;
+      current = current.parentNodeId ? domNodeById.get(current.parentNodeId) : undefined;
+    }
+    return null;
+  }
+
+  // First field click maps the detail (single-pick + auto live-sample); once a field is in
+  // the editor, clicking the SAME detail in a DIFFERENT card adds it as an example and
+  // re-infers the column (ADR 0009). A click inside the current card maps a fresh detail.
+  function handleFieldPick(node: DomNode) {
+    if (props.fieldSelector && props.fieldNode) {
+      const clickedCard = matchedContainerIdOf(node);
+      const currentCard = matchedContainerIdOf(props.fieldNode);
+      if (clickedCard && currentCard && clickedCard !== currentCard) {
+        props.onAddFieldExample(node);
+        return;
+      }
+    }
+    props.onFieldNodeSelect(node);
+  }
+
   const overlayNodes = useMemo(() => {
     const fieldMode = props.pickMode === "field";
-    const all =
-      fieldMode && props.selectedNode
-        ? (props.pageSession?.domNodes ?? []).filter((n) =>
-            isDescendant(n, props.selectedNode!, props.pageSession?.domNodes ?? [])
-          )
-        : props.pageSession?.domNodes ?? [];
+    const nodes = props.pageSession?.domNodes ?? [];
+    // In field mode, make details clickable in EVERY matched card (teach-by-example across
+    // cards, ADR 0009), not just the first picked one. Fall back to the single picked card
+    // when there's no match set (single-record pages, whose body selector matches nothing).
+    const inMatchedCard = (n: DomNode) => {
+      let current: DomNode | undefined = n;
+      while (current) {
+        if (matchedNodeIds.has(current.nodeId)) return true;
+        current = current.parentNodeId ? domNodeById.get(current.parentNodeId) : undefined;
+      }
+      return false;
+    };
+    let all = nodes;
+    if (fieldMode) {
+      if (matchedNodeIds.size > 0) all = nodes.filter(inMatchedCard);
+      else if (props.selectedNode) all = nodes.filter((n) => isDescendant(n, props.selectedNode!, nodes));
+    }
     // Sort largest-first so small elements paint last (on top) and win the hover
     // hit-test. In field mode we must NOT cap to the largest boxes — small details
     // like price/mileage are exactly what the user needs to click, and hover-only
@@ -221,7 +261,7 @@ export function BuilderView(props: BuilderProps) {
       .filter((n) => n.width >= 6 && n.height >= 6)
       .sort((a, b) => b.width * b.height - a.width * a.height);
     return fieldMode ? eligible : eligible.slice(0, 220);
-  }, [props.pageSession, props.pickMode, props.selectedNode]);
+  }, [props.pageSession, props.pickMode, props.selectedNode, matchedNodeIds, domNodeById]);
 
   const fieldNodes = useMemo(() => {
     if (!props.pageSession || !props.selectedNode) return [];
@@ -551,7 +591,7 @@ export function BuilderView(props: BuilderProps) {
                                 }
                                 onClick={() =>
                                   props.pickMode === "field"
-                                    ? props.onFieldNodeSelect(node)
+                                    ? handleFieldPick(node)
                                     : handleContainerPick(node)
                                 }
                                 title={`${props.pickMode === "field" ? "Field" : "Container"} ${nodeLabel(node)} ${node.text}`}
@@ -792,7 +832,7 @@ export function BuilderView(props: BuilderProps) {
                               key={node.nodeId}
                               onClick={() =>
                                 props.pickMode === "field"
-                                  ? props.onFieldNodeSelect(node)
+                                  ? handleFieldPick(node)
                                   : handleContainerPick(node)
                               }
                               style={{
@@ -1047,22 +1087,17 @@ export function BuilderView(props: BuilderProps) {
                     />
                   ) : null}
                 </div>
-                <div
-                  style={{
-                    padding: "6px 10px",
-                    background: "white",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    wordBreak: "break-all",
-                    color: "var(--text-secondary)"
-                  }}
-                >
-                  {props.fieldSelector.selector}
-                </div>
-
                 <FieldSample busy={props.fieldSampleBusy} value={props.fieldSample} />
+
+                {/* No selector shown — fix a wrong column by example, not by editing code
+                    (ADR 0009). Only meaningful when there are multiple cards to compare. */}
+                {props.recipeShape !== "single" && (props.selectorResult?.matchCount ?? 0) > 1 ? (
+                  <p style={{ fontSize: 11.5, color: "var(--text-muted)", lineHeight: 1.45, marginTop: 8 }}>
+                    Wrong in some rows?{" "}
+                    <strong style={{ color: "var(--text-secondary)" }}>Click the right value in another card</strong>
+                    {props.fieldExampleIds.length > 1 ? ` · ${props.fieldExampleIds.length} examples` : ""}.
+                  </p>
+                ) : null}
 
                 <Button
                   variant="primary"
