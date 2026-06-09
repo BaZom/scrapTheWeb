@@ -67,7 +67,8 @@ export type BuilderProps = {
   pickerView: "overlays" | "nodes";
   onPickerViewChange: (view: "overlays" | "nodes") => void;
   fields: PreviewField[];
-  onFieldsChange: (fields: PreviewField[]) => void;
+  // Remove a field by deleting its column in the preview table (ADR 0009).
+  onRemoveField: (name: string) => void;
   fieldSamples: Record<string, string>;
   onStepNavigate: (target: number) => void;
   preview: PreviewResult | null;
@@ -408,18 +409,37 @@ export function BuilderView(props: BuilderProps) {
     });
   }
 
-  // The fields the user has selected, resolved to {nodeId, extract, name, value} for commit
-  // at "Preview records". Reads the current card's candidates only (ADR 0009).
+  // The selected fields, resolved to {key, nodeId, extract, name, value} with FINAL unique
+  // names (deduped here so the committed field names match — lets a removed column untick its
+  // candidate). Reads the current item's candidates only (ADR 0009).
   function selectedFieldPicks() {
-    return [...selectedKeys]
-      .map((key) => candidateByKey.get(key))
-      .filter((c): c is FieldCandidate => Boolean(c))
-      .map((c) => ({
-        nodeId: c.nodeId,
-        extract: c.extract,
-        value: c.value,
-        name: (fieldNameOverrides[c.key] ?? c.suggestedName).trim() || c.suggestedName
-      }));
+    const seen = new Set<string>();
+    const picks: { key: string; nodeId: string; extract: ExtractType; name: string; value: string }[] = [];
+    for (const key of selectedKeys) {
+      const c = candidateByKey.get(key);
+      if (!c) continue;
+      const base = (fieldNameOverrides[key] ?? c.suggestedName).trim() || c.suggestedName;
+      let name = base;
+      let n = 2;
+      while (seen.has(name)) name = `${base}_${n++}`;
+      seen.add(name);
+      picks.push({ key, nodeId: c.nodeId, extract: c.extract, name, value: c.value });
+    }
+    return picks;
+  }
+
+  // Remove a field by deleting its column in the preview table (ADR 0009): drop the field and
+  // untick its candidate so it won't return on the next preview. Adding stays via selection.
+  function handleRemoveField(name: string) {
+    props.onRemoveField(name);
+    const pick = selectedFieldPicks().find((p) => p.name === name);
+    if (pick) {
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(pick.key);
+        return next;
+      });
+    }
   }
 
   const step = currentStep(props);
@@ -1311,69 +1331,6 @@ export function BuilderView(props: BuilderProps) {
               </Card>
             ) : null}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {props.fields.map((f, i) => (
-                <Card
-                  key={`${f.name}-${i}`}
-                  className="card-pad"
-                  style={{ padding: "10px 12px", background: "white", boxShadow: "var(--shadow-xs)" }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Icon name="hash" size={11} style={{ color: "var(--text-muted)" }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, color: "var(--text-primary)" }}>
-                      {f.name}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 10.5,
-                        fontWeight: 600,
-                        padding: "1px 7px",
-                        borderRadius: 3,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.04em",
-                        background: TYPE_COLORS[f.extract].bg,
-                        color: TYPE_COLORS[f.extract].fg
-                      }}
-                    >
-                      {f.extract}
-                    </span>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      style={{ width: 22, height: 22, border: 0 }}
-                      onClick={() => props.onFieldsChange(props.fields.filter((_, idx) => idx !== i))}
-                      title="Remove field"
-                    >
-                      <Icon name="x" size={11} />
-                    </button>
-                  </div>
-                  {props.fieldSamples[f.name] ? (
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: 12,
-                        color: "var(--text-secondary)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6
-                      }}
-                    >
-                      <Icon name="arrowRight" size={11} style={{ color: "var(--success-fg)", flexShrink: 0 }} />
-                      <span
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap"
-                        }}
-                      >
-                        {props.fieldSamples[f.name]}
-                      </span>
-                    </div>
-                  ) : null}
-                </Card>
-              ))}
-            </div>
-
             {props.recipeShape !== "single" &&
             props.pickMode === "container" &&
             props.selectorResult ? (
@@ -1512,6 +1469,16 @@ export function BuilderView(props: BuilderProps) {
                           >
                             {f.extract}
                           </span>
+                          {/* Remove this field by dropping its column here (ADR 0009). */}
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            style={{ width: 18, height: 18, border: 0 }}
+                            onClick={() => handleRemoveField(f.name)}
+                            title={`Remove ${f.name}`}
+                          >
+                            <Icon name="x" size={10} />
+                          </button>
                         </span>
                       </th>
                     ))}

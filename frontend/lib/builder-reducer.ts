@@ -75,6 +75,7 @@ export type BuilderAction =
   | { type: "field_attribute_changed"; attribute: string }
   | { type: "field_added"; sample: string | null }
   | { type: "fields_added"; fields: PreviewField[]; samples: Record<string, string> }
+  | { type: "field_removed"; name: string }
   | { type: "fields_changed"; fields: PreviewField[] }
   | { type: "shape_changed"; shape: RecipeShape }
   | { type: "pick_mode_changed"; mode: PickMode }
@@ -287,6 +288,18 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
       // extracted for a different set of fields. Clear it so a stale table can't show a
       // column the user just removed (matches field_added, which also clears preview).
       return { ...state, fields: action.fields, preview: null };
+
+    case "field_removed": {
+      // Remove a column straight from the preview table (ADR 0009): drop the field but KEEP
+      // the preview — the remaining columns already hold valid data, so removing one shouldn't
+      // blank the whole table (unlike fields_changed). The dropped column just stops rendering.
+      const { [action.name]: _dropped, ...keptSamples } = state.fieldSamples;
+      return {
+        ...state,
+        fields: state.fields.filter((f) => f.name !== action.name),
+        fieldSamples: keptSamples
+      };
+    }
 
     case "shape_changed": {
       // Manual override when auto-detection (ADR 0005) guessed wrong — e.g. a single-item

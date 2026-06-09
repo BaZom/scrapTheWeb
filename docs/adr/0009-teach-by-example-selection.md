@@ -263,6 +263,17 @@ Three fixes after the first cut of the one-selection workflow:
   see CLAUDE.md data-flow) is disabled until a preview exists, so the user always sees the
   extracted data before committing. "Preview records" remains a no-write dry-run.
 
+### Field management lives in the preview table, not a side list
+
+The right panel previously showed a second list — one card per committed field — *under* the
+selection table. Redundant. Removed it. Fields are now managed where you see them: each
+column in the **preview records table** has an **×** to remove that field. Removal uses a new
+`field_removed` action that drops the field **without clearing the preview** (the other
+columns' data is still valid — unlike `fields_changed`), and also unticks the field's source
+candidate so it won't return on the next preview. Adding stays via the selection table /
+screenshot. Field names are deduped in the component (`selectedFieldPicks`) so the committed
+column name maps back to its candidate for the untick.
+
 ### Concepts to look up (follow-up)
 
 - **Mode affordances** — when a single canvas serves two intents (pick items vs map fields),

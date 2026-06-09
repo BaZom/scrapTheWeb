@@ -561,18 +561,13 @@ export default function Home() {
             .catch(() => null)
         )
       );
-      const seen = new Set<string>();
+      // Names are already final + unique (deduped in the component), so use them directly.
       const fields: { name: string; selector: string; extract: ExtractType }[] = [];
       const samples: Record<string, string> = {};
       for (const item of resolved) {
         if (!item) continue;
-        const base = item.pick.name.trim() || "field";
-        let unique = base;
-        let n = 2;
-        while (seen.has(unique)) unique = `${base}_${n++}`;
-        seen.add(unique);
-        fields.push({ name: unique, selector: item.selector, extract: item.pick.extract });
-        if (item.pick.value) samples[unique] = item.pick.value;
+        fields.push({ name: item.pick.name, selector: item.selector, extract: item.pick.extract });
+        if (item.pick.value) samples[item.pick.name] = item.pick.value;
       }
       if (fields.length === 0) return;
       // Commit the fields (so Save works), then extract all matched items with those same
@@ -733,7 +728,7 @@ export default function Home() {
       pickerView,
       onPickerViewChange: setPickerView,
       fields,
-      onFieldsChange: (next: PreviewField[]) => dispatch({ type: "fields_changed", fields: next }),
+      onRemoveField: (name: string) => dispatch({ type: "field_removed", name }),
       fieldSamples,
       onStepNavigate: handleStepNavigate,
       preview,

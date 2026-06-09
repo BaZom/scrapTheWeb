@@ -470,3 +470,12 @@ describe("fields_added (multi-attribute from one element)", () => {
     expect(builderReducer(base, { type: "fields_added", fields: [], samples: {} })).toBe(base);
   });
 });
+
+describe("field_removed (remove a column from the preview table)", () => {
+  it("drops the field + its sample but KEEPS the preview", () => {
+    const s = builderReducer(deepListState(), { type: "field_removed", name: "price" });
+    expect(s.fields.map((f) => f.name)).toEqual(["title"]);
+    expect(s.fieldSamples).toEqual({ title: "Hello" });
+    expect(s.preview).not.toBeNull(); // removing one column must not blank the table
+  });
+});
