@@ -53,4 +53,4 @@ in `docs/adr/`. Concrete, actionable tickets — open bugs and specific planned 
 - **Contract tests.** A frontend Zod schema vs backend payload mismatch is only caught at
   runtime (it has bitten us). Add a shared-contract or generated-types check.
 - **Observability for the builder.** Per-step timings (render, generate, preview, run) and
-  error rates; see `docs/OBSERVABILITY.md` for the current metrics surface.
+  error rates; see `observability.md` for the current metrics surface.

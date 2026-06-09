@@ -45,12 +45,11 @@ S3-compatible storage for screenshots and rendered HTML
 
 See:
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design, data model,
-  security posture, API surface, and testing strategy.
-- [docs/RUNBOOK.md](docs/RUNBOOK.md) for environment variables, migrations,
-  staging checks, deployment operations, backups, and incident response.
-- [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for logs, metrics, traces,
-  Sentry, health checks, and graceful shutdown behavior.
+- [docs/reference/](docs/reference/) — current-state source of truth: architecture (system
+  design, data model, security posture, API surface, testing), the builder, observability,
+  and the runbook. Start at [docs/reference/README.md](docs/reference/README.md).
+- [docs/adr/](docs/adr/) — decision history. [docs/backlog/](docs/backlog/) — open bugs &
+  planned work.
 
 ## Quick Start
 
@@ -196,4 +195,4 @@ ScrapTheWeb is container-ready. A production deployment needs:
 - Optional Sentry DSNs and OTLP endpoint for error tracking and traces.
 - A real email provider for verification and password-reset delivery.
 
-Use [docs/RUNBOOK.md](docs/RUNBOOK.md) as the staging and production checklist.
+Use [docs/reference/runbook.md](docs/reference/runbook.md) as the staging and production checklist.

@@ -78,9 +78,9 @@ grep -q "createApiKey" frontend/lib/api.ts
 grep -q "requestPasswordReset" frontend/lib/api.ts
 grep -q "revokeAllSessions" frontend/lib/api.ts
 test -f README.md
-test -f docs/ARCHITECTURE.md
-test -f docs/OBSERVABILITY.md
-test -f docs/RUNBOOK.md
+test -f docs/reference/architecture.md
+test -f docs/reference/observability.md
+test -f docs/reference/runbook.md
 test -f scripts/smoke_auth_completion.py
 test -f scripts/smoke_e2e.py
 test -f backend/tests/test_security.py

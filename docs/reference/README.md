@@ -23,19 +23,20 @@ This rule is also recorded in `CLAUDE.md` and `AGENTS.md` so every agent/contrib
 
 ## Index
 
-- **[architecture.md](architecture.md)** — the system at a glance: components, the render →
-  extract pipeline, where data lives and when it's written, key files. (Complements the
-  longer narrative in `docs/ARCHITECTURE.md`.)
+- **[architecture.md](architecture.md)** — the whole system: components, render → extract
+  pipeline, where data lives + when written, data model, the two selector matchers, caching,
+  auth surface, security posture, frontend structure, testing.
 - **[builder.md](builder.md)** — the recipe builder in depth: the end-to-end UI flow, the
   no-code design principles, the reducer state machine, the selection model, selectors &
   extraction, the files/classes involved, and the concepts behind them.
+- **[observability.md](observability.md)** — logs, metrics, traces, Sentry, health checks.
+- **[runbook.md](runbook.md)** — operating the stack: env vars, migrations, deploy ops.
 - **[production-readiness.md](production-readiness.md)** — broad limitations and directions to
   harden before/at production scale. (Concrete open bugs + specific planned tickets live in
   **`docs/backlog/`**, not here.)
 
 ## Related docs
 
-- `docs/ARCHITECTURE.md` — system components & deployment narrative.
-- `docs/RUNBOOK.md` — operating the stack.
-- `docs/OBSERVABILITY.md` — metrics, logs, tracing.
+- `docs/adr/` — decision history (0001–0009).
+- `docs/backlog/` — open bugs & planned work.
 - `docs/adr/` — decision history (0001–0009).
