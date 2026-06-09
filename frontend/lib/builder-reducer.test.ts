@@ -427,3 +427,48 @@ describe("teach-by-example selection", () => {
     expect(s.fieldSelector).toEqual(inferred);
   });
 });
+
+describe("fields_added (multi-attribute from one element)", () => {
+  const base: BuilderState = {
+    ...initialBuilderState,
+    fieldName: "title",
+    fieldSelector: { selector: "a.title", matchCount: 3, strategy: "x", matchedNodeIds: [] }
+  };
+
+  it("appends several fields from one element and clears the editor", () => {
+    const s = builderReducer(base, {
+      type: "fields_added",
+      fields: [
+        { name: "title", selector: "a.title", extract: "text" },
+        { name: "title_link", selector: "a.title", extract: "href" }
+      ],
+      samples: { title: "Hello" }
+    });
+    expect(s.fields.map((f) => f.name)).toEqual(["title", "title_link"]);
+    expect(s.fieldSamples).toEqual({ title: "Hello" });
+    expect(s.fieldSelector).toBeNull();
+    expect(s.fieldNode).toBeNull();
+    expect(s.fieldName).toBe("");
+  });
+
+  it("dedupes by name against existing fields", () => {
+    const withExisting = {
+      ...base,
+      fields: [{ name: "title", selector: ".old", extract: "text" as const }]
+    };
+    const s = builderReducer(withExisting, {
+      type: "fields_added",
+      fields: [{ name: "title", selector: "a.title", extract: "text" }],
+      samples: {}
+    });
+    expect(s.fields).toHaveLength(1);
+    expect(s.fields[0].selector).toBe("a.title");
+  });
+
+  it("is a no-op without a selector", () => {
+    const s = { ...base, fieldSelector: null };
+    expect(
+      builderReducer(s, { type: "fields_added", fields: [{ name: "x", selector: "y", extract: "text" }], samples: {} })
+    ).toBe(s);
+  });
+});

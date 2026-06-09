@@ -77,6 +77,7 @@ export type BuilderAction =
   | { type: "field_extract_changed"; extract: ExtractType }
   | { type: "field_attribute_changed"; attribute: string }
   | { type: "field_added"; sample: string | null }
+  | { type: "fields_added"; fields: PreviewField[]; samples: Record<string, string> }
   | { type: "fields_changed"; fields: PreviewField[] }
   | { type: "shape_changed"; shape: RecipeShape }
   | { type: "pick_mode_changed"; mode: PickMode }
@@ -268,6 +269,28 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
           action.sample !== null
             ? { ...state.fieldSamples, [name]: action.sample }
             : state.fieldSamples,
+        fieldName: "",
+        fieldSelector: null,
+        fieldNode: null,
+        fieldExampleIds: [],
+        preview: null,
+        savedRecipe: null,
+        run: null
+      };
+    }
+
+    case "fields_added": {
+      // Commit one or more fields from a single picked element (ADR 0009): e.g. a linked
+      // title yields both a Text and a Link field. Dedupe by name, merge samples, clear the
+      // editor. No-op without a selector or any named field.
+      if (!state.fieldSelector) return state;
+      const incoming = action.fields.filter((f) => f.name.trim());
+      if (incoming.length === 0) return state;
+      const incomingNames = new Set(incoming.map((f) => f.name));
+      return {
+        ...state,
+        fields: [...state.fields.filter((f) => !incomingNames.has(f.name)), ...incoming],
+        fieldSamples: { ...state.fieldSamples, ...action.samples },
         fieldName: "",
         fieldSelector: null,
         fieldNode: null,

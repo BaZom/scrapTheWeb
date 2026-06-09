@@ -558,15 +558,24 @@ export default function Home() {
     }
   }
 
-  function addField() {
-    if (!fieldSelector) return;
-    if (!fieldName.trim()) {
+  // Commit the picked element as one or more fields (ADR 0009): the user can take several
+  // values from the same element (e.g. a linked title → Text + Link). The first extract uses
+  // the typed name; extras get a readable suffix. The live sample applies to the first.
+  function addFields(extracts: ExtractType[]) {
+    if (!fieldSelector || extracts.length === 0) return;
+    const base = fieldName.trim();
+    if (!base) {
       setError("Field name is required");
       return;
     }
-    // The reducer builds the field, dedupes by name, captures the live sample, and
-    // clears the editor; we just hand it the sample (which lives outside the reducer).
-    dispatch({ type: "field_added", sample: fieldSample });
+    const suffix: Partial<Record<ExtractType, string>> = { href: "_link", src: "_image" };
+    const fields = extracts.map((extract, i) => ({
+      name: i === 0 ? base : `${base}${suffix[extract] ?? `_${extract}`}`,
+      selector: fieldSelector.selector,
+      extract
+    }));
+    const samples = fieldSample !== null ? { [fields[0].name]: fieldSample } : {};
+    dispatch({ type: "fields_added", fields, samples });
     setFieldSample(null);
   }
 
@@ -704,7 +713,7 @@ export default function Home() {
         dispatch({ type: "field_attribute_changed", attribute }),
       fields,
       onFieldsChange: (next: PreviewField[]) => dispatch({ type: "fields_changed", fields: next }),
-      onAddField: addField,
+      onAddFields: addFields,
       fieldSample,
       fieldSampleBusy,
       fieldSamples,

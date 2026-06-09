@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import type {
   AccessBlock,
@@ -76,7 +76,7 @@ export type BuilderProps = {
   onFieldAttributeChange: (attr: string) => void;
   fields: PreviewField[];
   onFieldsChange: (fields: PreviewField[]) => void;
-  onAddField: () => void;
+  onAddFields: (extracts: ExtractType[]) => void;
   fieldSample: string | null;
   fieldSampleBusy: boolean;
   fieldSamples: Record<string, string>;
@@ -150,6 +150,9 @@ function formatValue(value: unknown) {
 export function BuilderView(props: BuilderProps) {
   const [bottomTab, setBottomTab] = useState<"preview" | "changes" | "logs">("preview");
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  // What to extract from the picked element (ADR 0009): friendly, present-only options the
+  // user ticks — no developer terms, no empty options, and several can be taken at once.
+  const [checkedExtracts, setCheckedExtracts] = useState<ExtractType[]>(["text"]);
 
   // Which nodes the container selector matches, so we can outline the whole repeated set
   // on the screenshot. These now come straight from the backend (`selectorResult
@@ -282,6 +285,43 @@ export function BuilderView(props: BuilderProps) {
       isDescendant(n, props.selectedNode!, props.pageSession!.domNodes)
     );
   }, [props.pageSession, props.selectedNode]);
+
+  // The values actually present on the picked element, as friendly choices (ADR 0009).
+  // Only non-empty ones, no developer terms; falls back to Text so there's always a choice.
+  const availableExtracts = useMemo(() => {
+    const n = props.fieldNode;
+    const out: { extract: ExtractType; label: string }[] = [];
+    if (n) {
+      if ((n.text ?? "").trim()) out.push({ extract: "text", label: "Text" });
+      if (n.attrs.href) out.push({ extract: "href", label: "Link" });
+      if (n.attrs.src) out.push({ extract: "src", label: "Image" });
+    }
+    return out.length > 0 ? out : [{ extract: "text" as ExtractType, label: "Text" }];
+  }, [props.fieldNode]);
+
+  // When a new field element is picked, default the ticked set to its best single value and
+  // sync the live sample (which tracks the first/primary extract via props.fieldExtract).
+  const fieldNodeId = props.fieldNode?.nodeId ?? null;
+  useEffect(() => {
+    if (!fieldNodeId) return;
+    const first = availableExtracts[0].extract;
+    setCheckedExtracts([first]);
+    props.onFieldExtractChange(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldNodeId]);
+
+  // Ticked extracts in display order (Text, Link, Image) — first is the primary (drives the
+  // field name + live sample). Toggling keeps at least one and re-syncs the primary.
+  const orderedChecked = availableExtracts.map((a) => a.extract).filter((e) => checkedExtracts.includes(e));
+  function toggleExtract(extract: ExtractType) {
+    const next = checkedExtracts.includes(extract)
+      ? checkedExtracts.filter((e) => e !== extract)
+      : [...checkedExtracts, extract];
+    if (next.length === 0) return; // never leave nothing ticked
+    setCheckedExtracts(next);
+    const primary = availableExtracts.map((a) => a.extract).filter((e) => next.includes(e))[0];
+    props.onFieldExtractChange(primary);
+  }
 
   const step = currentStep(props);
   const STEPS = props.recipeShape === "single" ? SINGLE_STEPS : LIST_STEPS;
@@ -1068,44 +1108,42 @@ export function BuilderView(props: BuilderProps) {
                       fontFamily: "inherit"
                     }}
                   />
-                  <span
-                    style={{
-                      fontSize: 10.5,
-                      fontWeight: 600,
-                      padding: "1px 7px",
-                      borderRadius: 3,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.04em",
-                      background: TYPE_COLORS[props.fieldExtract].bg,
-                      color: TYPE_COLORS[props.fieldExtract].fg
-                    }}
-                  >
-                    {props.fieldExtract}
-                  </span>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                  <select
-                    className="input input-sm"
-                    value={props.fieldExtract}
-                    onChange={(e) => props.onFieldExtractChange(e.target.value as ExtractType)}
-                    style={{ width: 110 }}
-                  >
-                    <option value="text">text</option>
-                    <option value="href">href</option>
-                    <option value="src">src</option>
-                    <option value="attribute">attribute</option>
-                    <option value="html">html</option>
-                  </select>
-                  {props.fieldExtract === "attribute" ? (
-                    <input
-                      className="input input-sm"
-                      placeholder="data-id"
-                      value={props.fieldAttribute}
-                      onChange={(e) => props.onFieldAttributeChange(e.target.value)}
-                      style={{ flex: 1 }}
-                    />
-                  ) : null}
+                {/* What to collect from this element (ADR 0009): friendly, present-only
+                    choices, tick one or several (e.g. a linked title → Text + Link). */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 6 }}>
+                    What to collect{availableExtracts.length > 1 ? " (tick one or more)" : ""}:
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {availableExtracts.map(({ extract, label }) => {
+                      const on = checkedExtracts.includes(extract);
+                      return (
+                        <button
+                          key={extract}
+                          type="button"
+                          onClick={() => toggleExtract(extract)}
+                          aria-pressed={on}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
+                            background: on ? "var(--accent-soft)" : "white",
+                            color: on ? "var(--accent-deep)" : "var(--text-secondary)"
+                          }}
+                        >
+                          <Icon name={on ? "check" : "plus"} size={11} /> {label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <FieldSample busy={props.fieldSampleBusy} value={props.fieldSample} />
 
@@ -1124,10 +1162,10 @@ export function BuilderView(props: BuilderProps) {
                   size="sm"
                   icon="plus"
                   style={{ marginTop: 10 }}
-                  onClick={props.onAddField}
-                  disabled={!props.fieldName.trim()}
+                  onClick={() => props.onAddFields(orderedChecked)}
+                  disabled={!props.fieldName.trim() || orderedChecked.length === 0}
                 >
-                  Add field
+                  {orderedChecked.length > 1 ? `Add ${orderedChecked.length} fields` : "Add field"}
                 </Button>
               </Card>
             ) : null}
