@@ -94,3 +94,78 @@ would** (tested), so teach-by-example is a pure superset of today's behavior. Ex
 - Manual: a list page where the auto-pick misses cards → click a missed card → count +
   outline grow, no CSS shown; add a field example from another card → column corrects; the
   one-click happy path is unchanged.
+
+---
+
+## Follow-up round (2026-06-09) — usability fixes from first walkthrough
+
+Four issues surfaced reviewing the first cut. Recorded here because they shape the same
+no-code selection surface.
+
+### 1. Adding missed items was broken (bug)
+
+The first item pick auto-advances to **Details (field) mode** (ADR 0001 D1), but adding a
+missed item only made sense in **Item mode** — so clicking a missed card was interpreted as
+a *field* pick and the relative-selector path raised "node not inside the selected
+container." The "click missed items" nudge therefore led into an error.
+
+**Fix.** Mode is now explicit in the refine loop: once an item is picked the canvas shows
+clickable **node overlays** (not the candidate cards) with the matched set outlined, so any
+missed card is clickable; the Item card shows **"Missed some items? Add them"** (switches to
+Item mode) and a **Done** button back to Details. `showCandidates` is gated on
+`!selectorResult` so candidate cards help only the first pick; the group outline is
+restricted to field mode to avoid doubling the node-overlay matched outline.
+
+### 2. List/single detection — no new logic
+
+Confirmed already handled: render-time candidate scoring picks list vs single
+(`STRONG_CANDIDATE_SCORE`, ADR 0005) with the manual toggle as override. Recorded so it
+isn't re-investigated.
+
+### 3 + 4 + 5. "What to collect" picker — friendly, present-only, multi-value
+
+The extract control exposed developer vocabulary (`text/href/src/attribute/html`), offered
+options that are empty for the element, and allowed only **one** value per element.
+
+**Decision.** Replace the dropdown + raw attribute box with **tickable, friendly options
+showing only values present on the clicked element** — **Text / Link / Image** — derived
+client-side from the DOM node (`text`, `attrs.href`, `attrs.src`, all already captured by
+the render script). Ticking several takes **multiple values from one element** (a linked
+title → a Text field *and* a Link field): the first ticked extract keeps the typed name,
+extras get a readable suffix (`_link` / `_image`). New `fields_added` reducer action commits
+the set atomically (dedupe by name, clear the editor). The live sample tracks the first
+("primary") tick. `html` and the generic free-text `attribute` are dropped from the UI (the
+backend still supports them; they're just not surfaced to non-coders).
+
+### Live preview as you build
+
+To let users *judge* a field by its values rather than its selector, the results table now
+**auto-extracts (debounced, cancellable)** whenever the item selector or field set changes —
+no manual Preview click. Errors stay silent here (the manual Preview button surfaces them).
+Repeat extractions are cheap via the page-session HTML cache (ADR 0008) — the synergy that
+ADR motivated.
+
+**Why these belong together:** all four serve the standing product rule (CLAUDE.md) that the
+builder stays click-and-go for **non-coders** — no CSS, no developer terms, no empty
+choices, and immediate visible feedback.
+
+**Rejected / deferred:** exclude (negative) examples; a per-card confidence strip in the
+field editor; multi-value naming the user can edit before commit (auto-suffix is enough for
+v1). Known debt: `fieldAttribute` / `onFieldAttributeChange` props are now unused (attribute
+UI removed) — prune in a later cleanup.
+
+### Concepts to look up (follow-up)
+
+- **Mode affordances** — when a single canvas serves two intents (pick items vs map fields),
+  make the active intent explicit rather than overloading a click by position.
+- **Capability-derived UI** — generating the choices from the data actually present
+  (present attributes) instead of a fixed menu, so empty/irrelevant options never show.
+- **Optimistic/auto feedback loops** — debounced auto-preview as a "see it as you build"
+  surface, and why it must be cancellable (stale-response race, ADR 0001 D5).
+
+### Verification (follow-up)
+
+- Frontend: new `fields_added` reducer tests (multi-field from one element, dedupe, no-op
+  without selector); `npm test` (37), `typecheck`, `lint` clean.
+- Manual (pending live-stack pass): missed-item add via the mode switch; tick Text+Link on a
+  linked title → two fields; table auto-populates on field/selector change.
