@@ -153,6 +153,9 @@ export function BuilderView(props: BuilderProps) {
   // What to extract from the picked element (ADR 0009): friendly, present-only options the
   // user ticks — no developer terms, no empty options, and several can be taken at once.
   const [checkedExtracts, setCheckedExtracts] = useState<ExtractType[]>(["text"]);
+  // Preview shows ONE item while building; "Preview records" expands to the full table
+  // (compact, in the right panel) so the user judges fields before committing (ADR 0009).
+  const [showAllRecords, setShowAllRecords] = useState(false);
 
   // Which nodes the container selector matches, so we can outline the whole repeated set
   // on the screenshot. These now come straight from the backend (`selectorResult
@@ -523,7 +526,9 @@ export function BuilderView(props: BuilderProps) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) 360px",
+          // Wider assistant panel on the right (holds the live data + records table); the
+          // page screenshot is capped narrower below so it stops hogging space (ADR 0009).
+          gridTemplateColumns: "minmax(0, 1fr) 440px",
           flex: 1,
           minHeight: 0,
           overflow: "hidden"
@@ -546,7 +551,7 @@ export function BuilderView(props: BuilderProps) {
           {props.pageSession ? (
             props.screenshotObjectUrl ? (
               props.pickerView === "overlays" ? (
-                <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+                <div style={{ maxWidth: 760, margin: "0 auto" }}>
                   <div
                     style={{
                       background: "white",
@@ -1268,14 +1273,65 @@ export function BuilderView(props: BuilderProps) {
               </Button>
             ) : null}
 
+            {/* Live one-item preview (ADR 0009): the first matched item's values, so the
+                user can judge their fields without reading the whole table. */}
+            {props.fields.length > 0 && previewRows.length > 0 ? (
+              <Card className="card-pad" style={{ marginTop: 14, background: "var(--surface-soft)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {showAllRecords ? `All ${previewRows.length} records` : "This item"}
+                  </span>
+                  {props.previewBusy ? (
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Updating…</span>
+                  ) : null}
+                </div>
+                {showAllRecords ? (
+                  <div style={{ overflow: "auto", maxHeight: 260 }}>
+                    <table className="tbl" style={{ tableLayout: "auto", fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          {props.fields.map((f) => (
+                            <th key={f.name}>{f.name}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.map((row, i) => (
+                          <tr key={i}>
+                            {props.fields.map((f) => (
+                              <td key={f.name}>{formatValue(row[f.name])}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {props.fields.map((f) => (
+                      <div key={f.name} style={{ display: "flex", gap: 8, fontSize: 12.5 }}>
+                        <span style={{ color: "var(--text-muted)", minWidth: 90, flexShrink: 0 }}>{f.name}</span>
+                        <span style={{ color: "var(--text-primary)", wordBreak: "break-word" }}>
+                          {formatValue(previewRows[0]?.[f.name]) || <em style={{ color: "var(--text-muted)" }}>—</em>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            ) : null}
+
             <Button
-              variant="primary"
+              variant={showAllRecords ? "secondary" : "primary"}
               icon="eye"
               style={{ width: "100%", marginTop: 12 }}
               disabled={props.previewBusy || props.fields.length === 0 || !props.selectorResult}
-              onClick={props.onRunPreview}
+              onClick={() => {
+                setShowAllRecords((v) => !v);
+                props.onRunPreview();
+              }}
             >
-              {props.previewBusy ? "Extracting…" : "Preview records"}
+              {showAllRecords ? "Show one item" : props.previewBusy ? "Extracting…" : "Preview records"}
             </Button>
 
             <div
@@ -1308,7 +1364,9 @@ export function BuilderView(props: BuilderProps) {
         </aside>
       </div>
 
-      {/* BOTTOM PANEL: preview / changes / logs */}
+      {/* RESULTS PANEL — post-run only (records / changes / logs). During build the live
+          data lives in the right assistant panel instead, so the page view stays roomy. */}
+      {props.run ? (
       <div
         style={{
           borderTop: "1px solid var(--border)",
@@ -1511,6 +1569,7 @@ export function BuilderView(props: BuilderProps) {
           </div>
         ) : null}
       </div>
+      ) : null}
     </div>
   );
 }

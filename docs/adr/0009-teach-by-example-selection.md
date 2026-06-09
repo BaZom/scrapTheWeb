@@ -164,6 +164,30 @@ field editor; multi-value naming the user can edit before commit (auto-suffix is
 v1). Known debt: `fieldAttribute` / `onFieldAttributeChange` props are now unused (attribute
 UI removed) — prune in a later cleanup.
 
+### Preview UX + layout — one item while building, full table on demand
+
+The first cut auto-extracted and showed the **whole** records table inline. Two problems for
+non-coders: the big table dominated, and judging a field meant reading a grid. Also the page
+screenshot took most of the width with lots of empty space, and the records lived in a bottom
+panel.
+
+**Decision.**
+- **One item while building.** The right panel shows just the **first matched item's**
+  field → value list (live, fed by the debounced auto-extract; cheap on repeat via the
+  ADR 0008 cache). Enough to confirm "title = the right thing" without a table.
+- **Full table on demand.** "Preview records" toggles the right panel to a compact
+  all-records table (and back to one item). No bottom table during build.
+- **Roomier layout.** The screenshot is capped narrower (`maxWidth` 1180 → 760) and the
+  right assistant panel widened (360 → 440), so the page view stops hogging space and the
+  data sits beside it.
+- **Results panel is post-run only.** The bottom panel (records / changes / logs + export)
+  now renders only once a run exists; during build there's no bottom panel, matching the
+  "data on the right" layout.
+
+**Rejected:** a backend "limit to N rows" param for the one-item preview — the cache already
+makes extracting all rows cheap, and showing `rows[0]` needs no API change; revisit only if
+extraction of huge pages is felt.
+
 ### Concepts to look up (follow-up)
 
 - **Mode affordances** — when a single canvas serves two intents (pick items vs map fields),
