@@ -215,6 +215,34 @@ discovery missed. Single-record pages keep the manual picker (their "card" is th
 **Rejected:** auto-adding all discovered fields (the user should choose); a backend
 field-detector (client-side enumeration over the captured DOM nodes is enough and instant).
 
+### Final field workflow — one selection, explicit preview
+
+Iterating on the field step surfaced the intended flow (user's spec): pick an item → see that
+one item's data in a table → select fields from the table **or** the screenshot (no conflict)
+→ nothing extracts until an explicit "Preview records", which then fills the bottom panel
+with all matched items.
+
+**Decision.**
+- **One shared selection** — a `selectedKeys` set (`nodeId:extract`). The discovery table's
+  checkboxes and on-screenshot clicks both toggle the *same* set (`toggleFieldKey`), so the
+  two input methods can't disagree. The screenshot also reflects the selection (a clicked,
+  selected value is highlighted), and the working card gets a bold "Editing this item"
+  spotlight so it's unmistakable.
+- **Current item only** — candidates come from the selected card's descendants; values are
+  the card's own DOM values. No reading across matched items.
+- **No auto-preview** — the debounced auto-extract effect is removed; selecting is instant
+  and client-side. The earlier right-panel one-item/records toggle is gone too.
+- **"Preview records" is the only extraction** — it generates each selected candidate's
+  relative selector (parallel, `/selector`), commits them as the recipe `fields`, extracts
+  all matched items, and shows them in the **bottom panel**. Save uses those fields.
+- **Removed the conflicting path** — the separate `fieldSelector` "What to collect" editor
+  (which swapped out the table on a screenshot click) is deleted; clicks now just toggle the
+  shared selection. The raw CSS selector is shown nowhere.
+
+**Rejected:** committing fields on every tick (would either fire a backend call per tick or
+desync) — deferring selector generation + extraction to the explicit "Preview records" click
+matches the spec (selecting ≠ previewing) and keeps selecting instant.
+
 ### Concepts to look up (follow-up)
 
 - **Mode affordances** — when a single canvas serves two intents (pick items vs map fields),

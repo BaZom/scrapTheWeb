@@ -66,28 +66,17 @@ export type BuilderProps = {
   onPickModeChange: (mode: "container" | "field") => void;
   pickerView: "overlays" | "nodes";
   onPickerViewChange: (view: "overlays" | "nodes") => void;
-  fieldNode: DomNode | null;
-  fieldSelector: SelectorResult | null;
-  fieldName: string;
-  onFieldNameChange: (name: string) => void;
-  fieldExtract: ExtractType;
-  onFieldExtractChange: (type: ExtractType) => void;
-  fieldAttribute: string;
-  onFieldAttributeChange: (attr: string) => void;
   fields: PreviewField[];
   onFieldsChange: (fields: PreviewField[]) => void;
-  onAddFields: (extracts: ExtractType[]) => void;
-  // Commit ticked rows from the auto-discovery table (ADR 0009): each becomes a field.
-  onAddDiscoveredFields: (
-    picks: { nodeId: string; extract: ExtractType; name: string; value: string }[]
-  ) => void;
-  fieldSample: string | null;
-  fieldSampleBusy: boolean;
   fieldSamples: Record<string, string>;
   onStepNavigate: (target: number) => void;
   preview: PreviewResult | null;
   previewBusy: boolean;
-  onRunPreview: () => void;
+  // Preview records (ADR 0009): commit the selected fields + extract all matched items into
+  // the bottom panel. `picks` are the discovery rows the user selected (table or screenshot).
+  onPreviewRecords: (
+    picks: { nodeId: string; extract: ExtractType; name: string; value: string }[]
+  ) => void;
   recipeName: string;
   onRecipeNameChange: (value: string) => void;
   savedRecipe: Recipe | null;
@@ -171,12 +160,10 @@ function formatValue(value: unknown) {
 export function BuilderView(props: BuilderProps) {
   const [bottomTab, setBottomTab] = useState<"preview" | "changes" | "logs">("preview");
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  // What to extract from the picked element (ADR 0009): friendly, present-only options the
-  // user ticks — no developer terms, no empty options, and several can be taken at once.
-  const [checkedExtracts, setCheckedExtracts] = useState<ExtractType[]>(["text"]);
-  // Preview shows ONE item while building; "Preview records" expands to the full table
-  // (compact, in the right panel) so the user judges fields before committing (ADR 0009).
-  const [showAllRecords, setShowAllRecords] = useState(false);
+  // Which discovered fields the user has selected (ADR 0009): candidate key `nodeId:extract`.
+  // ONE shared selection — toggled by both the table and screenshot clicks, so they can't
+  // conflict. Selecting is instant/client-side; nothing extracts until "Preview records".
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   // Which nodes the container selector matches, so we can outline the whole repeated set
   // on the screenshot. These now come straight from the backend (`selectorResult
@@ -262,10 +249,14 @@ export function BuilderView(props: BuilderProps) {
     return null;
   }
 
-  // Manual field pick: clicking a detail inside the selected card maps it as a single field
-  // (the auto-discovery table is the primary path; this is the fallback for anything missed).
+  // Clicking a detail on the screenshot toggles the SAME selection the table uses (ADR 0009),
+  // so the two never conflict. Matches the clicked element to its discovered candidate(s);
+  // prefers the text value, falls back to the first (e.g. an image/link). No candidate
+  // (a wrapper, not an extractable value) → no-op; the value lives in a child instead.
   function handleFieldPick(node: DomNode) {
-    props.onFieldNodeSelect(node);
+    const keys = discoveredFields.filter((c) => c.nodeId === node.nodeId).map((c) => c.key);
+    if (keys.length === 0) return;
+    toggleFieldKey(keys.find((k) => k.endsWith(":text")) ?? keys[0]);
   }
 
   const overlayNodes = useMemo(() => {
@@ -349,50 +340,48 @@ export function BuilderView(props: BuilderProps) {
       .slice(0, 15);
   }, [props.recipeShape, props.selectedNode, props.pageSession, fieldNodes]);
 
-  // Tick state + name overrides for the discovery table; reset when the card changes.
-  const [pickedFieldKeys, setPickedFieldKeys] = useState<Record<string, boolean>>({});
+  // Editable name overrides for discovery rows; reset selection + names when the card changes.
   const [fieldNameOverrides, setFieldNameOverrides] = useState<Record<string, string>>({});
   const selectedNodeId = props.selectedNode?.nodeId ?? null;
   useEffect(() => {
-    setPickedFieldKeys({});
+    setSelectedKeys(new Set());
     setFieldNameOverrides({});
   }, [selectedNodeId]);
 
-  // The values actually present on the picked element, as friendly choices (ADR 0009).
-  // Only non-empty ones, no developer terms; falls back to Text so there's always a choice.
-  const availableExtracts = useMemo(() => {
-    const n = props.fieldNode;
-    const out: { extract: ExtractType; label: string }[] = [];
-    if (n) {
-      if ((n.text ?? "").trim()) out.push({ extract: "text", label: "Text" });
-      if (n.attrs.href) out.push({ extract: "href", label: "Link" });
-      if (n.attrs.src) out.push({ extract: "src", label: "Image" });
-    }
-    return out.length > 0 ? out : [{ extract: "text" as ExtractType, label: "Text" }];
-  }, [props.fieldNode]);
+  const candidateByKey = useMemo(() => {
+    const m = new Map<string, FieldCandidate>();
+    discoveredFields.forEach((c) => m.set(c.key, c));
+    return m;
+  }, [discoveredFields]);
 
-  // When a new field element is picked, default the ticked set to its best single value and
-  // sync the live sample (which tracks the first/primary extract via props.fieldExtract).
-  const fieldNodeId = props.fieldNode?.nodeId ?? null;
-  useEffect(() => {
-    if (!fieldNodeId) return;
-    const first = availableExtracts[0].extract;
-    setCheckedExtracts([first]);
-    props.onFieldExtractChange(first);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fieldNodeId]);
+  // Is this DOM node one of the user's selected fields? (drives the screenshot highlight so
+  // table ticks and on-page clicks show the same selection — ADR 0009).
+  function nodeIsSelectedField(node: DomNode): boolean {
+    return discoveredFields.some((c) => c.nodeId === node.nodeId && selectedKeys.has(c.key));
+  }
 
-  // Ticked extracts in display order (Text, Link, Image) — first is the primary (drives the
-  // field name + live sample). Toggling keeps at least one and re-syncs the primary.
-  const orderedChecked = availableExtracts.map((a) => a.extract).filter((e) => checkedExtracts.includes(e));
-  function toggleExtract(extract: ExtractType) {
-    const next = checkedExtracts.includes(extract)
-      ? checkedExtracts.filter((e) => e !== extract)
-      : [...checkedExtracts, extract];
-    if (next.length === 0) return; // never leave nothing ticked
-    setCheckedExtracts(next);
-    const primary = availableExtracts.map((a) => a.extract).filter((e) => next.includes(e))[0];
-    props.onFieldExtractChange(primary);
+  // Toggle a candidate in the shared selection (used by BOTH the table and the screenshot).
+  function toggleFieldKey(key: string) {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // The fields the user has selected, resolved to {nodeId, extract, name, value} for commit
+  // at "Preview records". Reads the current card's candidates only (ADR 0009).
+  function selectedFieldPicks() {
+    return [...selectedKeys]
+      .map((key) => candidateByKey.get(key))
+      .filter((c): c is FieldCandidate => Boolean(c))
+      .map((c) => ({
+        nodeId: c.nodeId,
+        extract: c.extract,
+        value: c.value,
+        name: (fieldNameOverrides[c.key] ?? c.suggestedName).trim() || c.suggestedName
+      }));
   }
 
   const step = currentStep(props);
@@ -687,8 +676,8 @@ export function BuilderView(props: BuilderProps) {
                       {props.imageSize && !showCandidates
                         ? overlayNodes.map((node) => {
                             const selected =
-                              props.selectedNode?.nodeId === node.nodeId ||
-                              props.fieldNode?.nodeId === node.nodeId;
+                              (props.pickMode === "container" && props.selectedNode?.nodeId === node.nodeId) ||
+                              (props.pickMode === "field" && nodeIsSelectedField(node));
                             const hovered = hoveredNodeId === node.nodeId;
                             // In container mode, persistently outline the whole repeated set
                             // so the user can confirm the selection grabbed every card.
@@ -865,6 +854,41 @@ export function BuilderView(props: BuilderProps) {
                           ))
                         : null}
 
+                      {/* The card being worked on — make it unmistakable while mapping
+                          fields (ADR 0009 #3): bold outline + a label, dimming the rest. */}
+                      {props.imageSize && props.pickMode === "field" && props.selectedNode ? (
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: `${(props.selectedNode.x / props.imageSize.width) * 100}%`,
+                            top: `${(props.selectedNode.y / props.imageSize.height) * 100}%`,
+                            width: `${(props.selectedNode.width / props.imageSize.width) * 100}%`,
+                            height: `${(props.selectedNode.height / props.imageSize.height) * 100}%`,
+                            border: "2.5px solid var(--accent)",
+                            borderRadius: 8,
+                            boxShadow: "0 0 0 9999px rgba(15,23,42,0.20)",
+                            pointerEvents: "none"
+                          }}
+                        >
+                          <span
+                            style={{
+                              position: "absolute",
+                              top: -22,
+                              left: -2,
+                              background: "var(--accent)",
+                              color: "white",
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              padding: "2px 8px",
+                              borderRadius: 5,
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            Editing this item
+                          </span>
+                        </div>
+                      ) : null}
+
                       {props.selectorResult ? (
                         <div
                           style={{
@@ -960,8 +984,8 @@ export function BuilderView(props: BuilderProps) {
                         .slice(0, 200)
                         .map((node) => {
                           const active =
-                            props.selectedNode?.nodeId === node.nodeId ||
-                            props.fieldNode?.nodeId === node.nodeId;
+                            (props.pickMode === "container" && props.selectedNode?.nodeId === node.nodeId) ||
+                            (props.pickMode === "field" && nodeIsSelectedField(node));
                           return (
                             <button
                               type="button"
@@ -1169,25 +1193,25 @@ export function BuilderView(props: BuilderProps) {
               </p>
             ) : null}
 
-            {/* Auto-discovered fields inside the selected card (ADR 0009): tick the ones to
-                collect. The primary way to map fields — no element-by-element hunting. */}
-            {!props.fieldSelector && discoveredFields.length > 0 ? (
+            {/* This item's data (ADR 0009): every value found in the selected card, with a
+                field name. Tick rows to collect them — or click them on the screenshot; both
+                drive the SAME selection. Nothing extracts until "Preview records". */}
+            {discoveredFields.length > 0 ? (
               <Card className="card-pad" style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 10 }}>
-                  Found these in the item — <strong style={{ color: "var(--text-primary)" }}>tick what to collect</strong>:
+                  Fields in this item — <strong style={{ color: "var(--text-primary)" }}>tick what to collect</strong>{" "}
+                  (or click it in the page):
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {discoveredFields.map((c) => {
-                    const on = !!pickedFieldKeys[c.key];
+                    const on = selectedKeys.has(c.key);
                     const name = fieldNameOverrides[c.key] ?? c.suggestedName;
                     return (
                       <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <input
                           type="checkbox"
                           checked={on}
-                          onChange={(e) =>
-                            setPickedFieldKeys((p) => ({ ...p, [c.key]: e.target.checked }))
-                          }
+                          onChange={() => toggleFieldKey(c.key)}
                           style={{ flexShrink: 0, cursor: "pointer" }}
                         />
                         <input
@@ -1218,102 +1242,6 @@ export function BuilderView(props: BuilderProps) {
                     );
                   })}
                 </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon="plus"
-                  style={{ marginTop: 12 }}
-                  disabled={!discoveredFields.some((c) => pickedFieldKeys[c.key]) || props.selectorBusy}
-                  onClick={() => {
-                    const picks = discoveredFields
-                      .filter((c) => pickedFieldKeys[c.key])
-                      .map((c) => ({
-                        nodeId: c.nodeId,
-                        extract: c.extract,
-                        value: c.value,
-                        name: (fieldNameOverrides[c.key] ?? c.suggestedName).trim() || c.suggestedName
-                      }));
-                    props.onAddDiscoveredFields(picks);
-                  }}
-                >
-                  {props.selectorBusy ? "Adding…" : "Add selected fields"}
-                </Button>
-                <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
-                  Missing something? Click it in the page to add it manually.
-                </p>
-              </Card>
-            ) : null}
-
-            {props.fieldSelector ? (
-              <Card className="card-pad" style={{ marginBottom: 12, background: "var(--accent-softer)", border: "1px solid var(--accent-soft)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <Icon name="hash" size={11} style={{ color: "var(--text-muted)" }} />
-                  <input
-                    value={props.fieldName}
-                    onChange={(e) => props.onFieldNameChange(e.target.value)}
-                    placeholder="field_name"
-                    style={{
-                      border: 0,
-                      background: "transparent",
-                      fontSize: 13,
-                      fontWeight: 600,
-                      outline: "none",
-                      flex: 1,
-                      padding: 0,
-                      minWidth: 0,
-                      color: "var(--text-primary)",
-                      fontFamily: "inherit"
-                    }}
-                  />
-                </div>
-
-                {/* What to collect from this element (ADR 0009): friendly, present-only
-                    choices, tick one or several (e.g. a linked title → Text + Link). */}
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginBottom: 6 }}>
-                    What to collect{availableExtracts.length > 1 ? " (tick one or more)" : ""}:
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {availableExtracts.map(({ extract, label }) => {
-                      const on = checkedExtracts.includes(extract);
-                      return (
-                        <button
-                          key={extract}
-                          type="button"
-                          onClick={() => toggleExtract(extract)}
-                          aria-pressed={on}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            padding: "4px 10px",
-                            borderRadius: 6,
-                            fontSize: 12.5,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            border: on ? "1px solid var(--accent)" : "1px solid var(--border)",
-                            background: on ? "var(--accent-soft)" : "white",
-                            color: on ? "var(--accent-deep)" : "var(--text-secondary)"
-                          }}
-                        >
-                          <Icon name={on ? "check" : "plus"} size={11} /> {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <FieldSample busy={props.fieldSampleBusy} value={props.fieldSample} />
-
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon="plus"
-                  style={{ marginTop: 10 }}
-                  onClick={() => props.onAddFields(orderedChecked)}
-                  disabled={!props.fieldName.trim() || orderedChecked.length === 0}
-                >
-                  {orderedChecked.length > 1 ? `Add ${orderedChecked.length} fields` : "Add field"}
-                </Button>
               </Card>
             ) : null}
 
@@ -1353,17 +1281,6 @@ export function BuilderView(props: BuilderProps) {
                       <Icon name="x" size={11} />
                     </button>
                   </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11.5,
-                      color: "var(--text-muted)",
-                      wordBreak: "break-all"
-                    }}
-                  >
-                    {f.selector}
-                  </div>
                   {props.fieldSamples[f.name] ? (
                     <div
                       style={{
@@ -1393,8 +1310,7 @@ export function BuilderView(props: BuilderProps) {
 
             {props.recipeShape !== "single" &&
             props.pickMode === "container" &&
-            props.selectorResult &&
-            !props.fieldSelector ? (
+            props.selectorResult ? (
               <Button
                 variant="secondary"
                 icon="cursor"
@@ -1405,65 +1321,16 @@ export function BuilderView(props: BuilderProps) {
               </Button>
             ) : null}
 
-            {/* Live one-item preview (ADR 0009): the first matched item's values, so the
-                user can judge their fields without reading the whole table. */}
-            {props.fields.length > 0 && previewRows.length > 0 ? (
-              <Card className="card-pad" style={{ marginTop: 14, background: "var(--surface-soft)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                    {showAllRecords ? `All ${previewRows.length} records` : "This item"}
-                  </span>
-                  {props.previewBusy ? (
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Updating…</span>
-                  ) : null}
-                </div>
-                {showAllRecords ? (
-                  <div style={{ overflow: "auto", maxHeight: 260 }}>
-                    <table className="tbl" style={{ tableLayout: "auto", fontSize: 12 }}>
-                      <thead>
-                        <tr>
-                          {props.fields.map((f) => (
-                            <th key={f.name}>{f.name}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewRows.map((row, i) => (
-                          <tr key={i}>
-                            {props.fields.map((f) => (
-                              <td key={f.name}>{formatValue(row[f.name])}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {props.fields.map((f) => (
-                      <div key={f.name} style={{ display: "flex", gap: 8, fontSize: 12.5 }}>
-                        <span style={{ color: "var(--text-muted)", minWidth: 90, flexShrink: 0 }}>{f.name}</span>
-                        <span style={{ color: "var(--text-primary)", wordBreak: "break-word" }}>
-                          {formatValue(previewRows[0]?.[f.name]) || <em style={{ color: "var(--text-muted)" }}>—</em>}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            ) : null}
-
+            {/* Explicit preview only (ADR 0009): nothing extracts until this is clicked;
+                results show in the bottom panel for all matched items. */}
             <Button
-              variant={showAllRecords ? "secondary" : "primary"}
+              variant="primary"
               icon="eye"
               style={{ width: "100%", marginTop: 12 }}
-              disabled={props.previewBusy || props.fields.length === 0 || !props.selectorResult}
-              onClick={() => {
-                setShowAllRecords((v) => !v);
-                props.onRunPreview();
-              }}
+              disabled={props.previewBusy || selectedKeys.size === 0}
+              onClick={() => props.onPreviewRecords(selectedFieldPicks())}
             >
-              {showAllRecords ? "Show one item" : props.previewBusy ? "Extracting…" : "Preview records"}
+              {props.previewBusy ? "Extracting…" : `Preview records${selectedKeys.size ? ` (${selectedKeys.size})` : ""}`}
             </Button>
 
             <div

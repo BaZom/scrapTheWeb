@@ -387,34 +387,6 @@ export default function Home() {
     setFieldSample(value);
   }, [fieldNode, fieldExtract, fieldAttribute]);
 
-  // Live preview as you build (ADR 0009): whenever the item selector or the field set
-  // changes, re-extract the table automatically (debounced) so the user sees real values
-  // without clicking Preview — fast on repeat via the HTML cache (ADR 0008). Cancellable so
-  // a slow/stale response can't overwrite a newer one.
-  const fieldsSignature = JSON.stringify(fields);
-  useEffect(() => {
-    if (!session || !pageSession || !selectorResult || fields.length === 0) return;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      setPreviewBusy(true);
-      previewPageSession(pageSession.sessionId, selectorResult.selector, fields, session.access_token)
-        .then((result) => {
-          if (!cancelled) dispatch({ type: "preview_succeeded", preview: result });
-        })
-        .catch(() => {
-          // Stay quiet — the manual Preview button surfaces errors; auto-preview shouldn't nag.
-        })
-        .finally(() => {
-          if (!cancelled) setPreviewBusy(false);
-        });
-    }, 400);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, pageSession?.sessionId, selectorResult?.selector, fieldsSignature]);
-
   function applyWorkspaceData([d, r, u]: [Dashboard, Recipe[], ExtractionRun[]]) {
     setDashboard(d);
     setRecipes(r);
@@ -566,14 +538,15 @@ export default function Home() {
   // Commit the picked element as one or more fields (ADR 0009): the user can take several
   // values from the same element (e.g. a linked title → Text + Link). The first extract uses
   // the typed name; extras get a readable suffix. The live sample applies to the first.
-  // Auto-discovery commit (ADR 0009): the user ticked fields in the card-fields table. For
-  // each, generate its relative selector (parallel, reusing the existing /selector flow),
-  // then add them all at once with their preview values as samples. Names are de-duplicated.
-  async function handleAddDiscoveredFields(
+  // Preview records (ADR 0009): the ONLY thing that extracts. Takes the fields the user
+  // selected (table ticks and/or screenshot clicks), generates each one's relative selector
+  // (parallel, reusing /selector), commits them as the recipe fields, then extracts ALL
+  // matched items and shows them in the bottom panel. Nothing here runs until the click.
+  async function handlePreviewRecords(
     picks: { nodeId: string; extract: ExtractType; name: string; value: string }[]
   ) {
     if (!session || !pageSession || !selectorResult || picks.length === 0) return;
-    setSelectorBusy(true);
+    setPreviewBusy(true);
     setError(null);
     try {
       const resolved = await Promise.all(
@@ -588,19 +561,29 @@ export default function Home() {
       const samples: Record<string, string> = {};
       for (const item of resolved) {
         if (!item) continue;
-        let name = item.pick.name.trim() || "field";
-        let unique = name;
+        const base = item.pick.name.trim() || "field";
+        let unique = base;
         let n = 2;
-        while (seen.has(unique)) unique = `${name}_${n++}`;
+        while (seen.has(unique)) unique = `${base}_${n++}`;
         seen.add(unique);
         fields.push({ name: unique, selector: item.selector, extract: item.pick.extract });
         if (item.pick.value) samples[unique] = item.pick.value;
       }
-      if (fields.length > 0) dispatch({ type: "fields_added", fields, samples });
+      if (fields.length === 0) return;
+      // Commit the fields (so Save works), then extract all matched items with those same
+      // fields (state.fields would be stale this tick, so pass the freshly-built list).
+      dispatch({ type: "fields_added", fields, samples });
+      const result = await previewPageSession(
+        pageSession.sessionId,
+        selectorResult.selector,
+        fields,
+        session.access_token
+      );
+      dispatch({ type: "preview_succeeded", preview: result });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not add the selected fields");
+      setError(e instanceof Error ? e.message : "Preview extraction failed");
     } finally {
-      setSelectorBusy(false);
+      setPreviewBusy(false);
     }
   }
 
@@ -744,27 +727,13 @@ export default function Home() {
       onPickModeChange: (mode: "container" | "field") => dispatch({ type: "pick_mode_changed", mode }),
       pickerView,
       onPickerViewChange: setPickerView,
-      fieldNode,
-      fieldSelector,
-      fieldName,
-      onFieldNameChange: (name: string) => dispatch({ type: "field_name_changed", name }),
-      fieldExtract,
-      onFieldExtractChange: (extract: ExtractType) =>
-        dispatch({ type: "field_extract_changed", extract }),
-      fieldAttribute,
-      onFieldAttributeChange: (attribute: string) =>
-        dispatch({ type: "field_attribute_changed", attribute }),
       fields,
       onFieldsChange: (next: PreviewField[]) => dispatch({ type: "fields_changed", fields: next }),
-      onAddFields: addFields,
-      onAddDiscoveredFields: handleAddDiscoveredFields,
-      fieldSample,
-      fieldSampleBusy,
       fieldSamples,
       onStepNavigate: handleStepNavigate,
       preview,
       previewBusy,
-      onRunPreview: runPreview,
+      onPreviewRecords: handlePreviewRecords,
       recipeName,
       onRecipeNameChange: (name: string) => dispatch({ type: "recipe_name_changed", name }),
       savedRecipe,
