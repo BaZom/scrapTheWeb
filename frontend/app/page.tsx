@@ -551,7 +551,12 @@ export default function Home() {
     try {
       const resolved = await Promise.all(
         picks.map((pick) =>
-          generateSelector(pageSession.sessionId, pick.nodeId, session.access_token, selectorResult.selector)
+          // Single-record pages: page-wide unique selector (no container). List: relative to
+          // the chosen item. Mirrors how field selectors were generated before (ADR 0005).
+          (recipeShape === "single"
+            ? generateSelector(pageSession.sessionId, pick.nodeId, session.access_token, undefined, { single: true })
+            : generateSelector(pageSession.sessionId, pick.nodeId, session.access_token, selectorResult.selector)
+          )
             .then((sel) => ({ pick, selector: sel.selector }))
             .catch(() => null)
         )

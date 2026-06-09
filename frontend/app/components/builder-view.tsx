@@ -141,7 +141,7 @@ function slugifyName(raw: string): string {
     .slice(0, 40);
 }
 
-// A discovered candidate field inside the selected card (ADR 0009): one extractable value.
+// A discovered candidate field (ADR 0009): one extractable value from one element.
 type FieldCandidate = {
   key: string; // `${nodeId}:${extract}` — stable id for tick/name state
   nodeId: string;
@@ -150,6 +150,35 @@ type FieldCandidate = {
   value: string; // preview value from the DOM node
   suggestedName: string;
 };
+
+// Every extractable value present on one element — its text, link, and/or image. Shared by
+// auto-discovery (a card's fields) and by clicking an element on the screenshot, so both
+// surface the SAME attribute rows for that element (ADR 0009 — group rows, tick multiple).
+function candidatesForNode(node: DomNode): FieldCandidate[] {
+  const nameFor = (extract: ExtractType): string => {
+    const a = node.attrs;
+    const hint =
+      a.itemprop ||
+      a["data-testid"] ||
+      a["aria-label"] ||
+      node.classes.find((c) =>
+        /title|name|price|cost|amount|date|time|location|place|desc|label|brand|model|rating|image|img|photo|link|url/i.test(c)
+      );
+    return (hint && slugifyName(hint)) || (extract === "href" ? "link" : extract === "src" ? "image" : "field");
+  };
+  const out: FieldCandidate[] = [];
+  const text = (node.text ?? "").trim();
+  if (text) {
+    out.push({ key: `${node.nodeId}:text`, nodeId: node.nodeId, extract: "text", label: "Text", value: text, suggestedName: nameFor("text") });
+  }
+  if (node.attrs.href) {
+    out.push({ key: `${node.nodeId}:href`, nodeId: node.nodeId, extract: "href", label: "Link", value: node.attrs.href, suggestedName: nameFor("href") });
+  }
+  if (node.attrs.src) {
+    out.push({ key: `${node.nodeId}:src`, nodeId: node.nodeId, extract: "src", label: "Image", value: node.attrs.src, suggestedName: nameFor("src") });
+  }
+  return out;
+}
 
 function formatValue(value: unknown) {
   if (value === null || value === undefined) return "";
@@ -249,14 +278,19 @@ export function BuilderView(props: BuilderProps) {
     return null;
   }
 
-  // Clicking a detail on the screenshot toggles the SAME selection the table uses (ADR 0009),
-  // so the two never conflict. Matches the clicked element to its discovered candidate(s);
-  // prefers the text value, falls back to the first (e.g. an image/link). No candidate
-  // (a wrapper, not an extractable value) → no-op; the value lives in a child instead.
+  // Clicking a detail on the screenshot surfaces ALL its attributes (Text/Link/Image) as
+  // rows and highlights them, so the user ticks which one(s) to collect — instead of
+  // auto-picking a single attribute (ADR 0009 — group rows, tick multiple). Adds the rows
+  // if they weren't already listed (e.g. single-record pages, which have no auto-discovery).
   function handleFieldPick(node: DomNode) {
-    const keys = discoveredFields.filter((c) => c.nodeId === node.nodeId).map((c) => c.key);
-    if (keys.length === 0) return;
-    toggleFieldKey(keys.find((k) => k.endsWith(":text")) ?? keys[0]);
+    const cands = candidatesForNode(node);
+    if (cands.length === 0) return; // a wrapper with no own value — its value is in a child
+    setClickedCandidates((prev) => {
+      const have = new Set([...prev, ...discoveredFields].map((c) => c.key));
+      const additions = cands.filter((c) => !have.has(c.key));
+      return additions.length ? [...prev, ...additions] : prev;
+    });
+    setFocusedNodeId(node.nodeId);
   }
 
   const overlayNodes = useMemo(() => {
@@ -297,29 +331,12 @@ export function BuilderView(props: BuilderProps) {
       fieldNodes.some(
         (d) => d.nodeId !== n.nodeId && (d.text ?? "").trim() !== "" && isDescendant(d, n, all)
       );
-    const nameFor = (n: DomNode, extract: ExtractType, idx: number) => {
-      const a = n.attrs;
-      const hint =
-        a.itemprop ||
-        a["data-testid"] ||
-        a["aria-label"] ||
-        n.classes.find((c) =>
-          /title|name|price|cost|amount|date|time|location|place|desc|label|brand|model|rating|image|img|photo|link|url/i.test(c)
-        );
-      const base = hint ? slugifyName(hint) : extract === "href" ? "link" : extract === "src" ? "image" : "field";
-      return base || `field_${idx + 1}`;
-    };
     const out: FieldCandidate[] = [];
-    fieldNodes.forEach((n, idx) => {
-      const text = (n.text ?? "").trim();
-      if (text && !hasTextDescendant(n)) {
-        out.push({ key: `${n.nodeId}:text`, nodeId: n.nodeId, extract: "text", label: "Text", value: text, suggestedName: nameFor(n, "text", idx) });
-      }
-      if (n.tag === "a" && n.attrs.href) {
-        out.push({ key: `${n.nodeId}:href`, nodeId: n.nodeId, extract: "href", label: "Link", value: n.attrs.href, suggestedName: nameFor(n, "href", idx) });
-      }
-      if (n.tag === "img" && n.attrs.src) {
-        out.push({ key: `${n.nodeId}:src`, nodeId: n.nodeId, extract: "src", label: "Image", value: n.attrs.src, suggestedName: nameFor(n, "src", idx) });
+    fieldNodes.forEach((n) => {
+      // Skip the text candidate on wrappers (their text is the whole subtree); keep links/imgs.
+      for (const c of candidatesForNode(n)) {
+        if (c.extract === "text" && hasTextDescendant(n)) continue;
+        out.push(c);
       }
     });
     // Drop empties/dupes by value+type, order by position, cap to stay scannable.
@@ -340,24 +357,45 @@ export function BuilderView(props: BuilderProps) {
       .slice(0, 15);
   }, [props.recipeShape, props.selectedNode, props.pageSession, fieldNodes]);
 
-  // Editable name overrides for discovery rows; reset selection + names when the card changes.
+  // Rows added by clicking an element on the screenshot (elements not in auto-discovery —
+  // mainly single-record pages, which have no card to pre-scan). Plus the element whose rows
+  // are currently highlighted ("focused") so the user can tick among its attributes.
+  const [clickedCandidates, setClickedCandidates] = useState<FieldCandidate[]>([]);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [fieldNameOverrides, setFieldNameOverrides] = useState<Record<string, string>>({});
-  const selectedNodeId = props.selectedNode?.nodeId ?? null;
+  // Reset the field-mapping state when the item (list) or page (single) changes.
+  const selectionScopeId = props.selectedNode?.nodeId ?? props.pageSession?.sessionId ?? null;
   useEffect(() => {
     setSelectedKeys(new Set());
     setFieldNameOverrides({});
-  }, [selectedNodeId]);
+    setClickedCandidates([]);
+    setFocusedNodeId(null);
+  }, [selectionScopeId]);
+
+  // All candidate rows = auto-discovered (list cards) + click-added, de-duped, ordered.
+  const allCandidates = useMemo<FieldCandidate[]>(() => {
+    const byKey = new Map<string, FieldCandidate>();
+    [...discoveredFields, ...clickedCandidates].forEach((c) => {
+      if (!byKey.has(c.key)) byKey.set(c.key, c);
+    });
+    const byId = new Map((props.pageSession?.domNodes ?? []).map((d) => [d.nodeId, d] as const));
+    return [...byKey.values()].sort((a, b) => {
+      const na = byId.get(a.nodeId);
+      const nb = byId.get(b.nodeId);
+      return (na?.y ?? 0) - (nb?.y ?? 0) || (na?.x ?? 0) - (nb?.x ?? 0);
+    });
+  }, [discoveredFields, clickedCandidates, props.pageSession]);
 
   const candidateByKey = useMemo(() => {
     const m = new Map<string, FieldCandidate>();
-    discoveredFields.forEach((c) => m.set(c.key, c));
+    allCandidates.forEach((c) => m.set(c.key, c));
     return m;
-  }, [discoveredFields]);
+  }, [allCandidates]);
 
   // Is this DOM node one of the user's selected fields? (drives the screenshot highlight so
   // table ticks and on-page clicks show the same selection — ADR 0009).
   function nodeIsSelectedField(node: DomNode): boolean {
-    return discoveredFields.some((c) => c.nodeId === node.nodeId && selectedKeys.has(c.key));
+    return allCandidates.some((c) => c.nodeId === node.nodeId && selectedKeys.has(c.key));
   }
 
   // Toggle a candidate in the shared selection (used by BOTH the table and the screenshot).
@@ -432,12 +470,15 @@ export function BuilderView(props: BuilderProps) {
           <Stepper steps={STEPS} current={step} compact onStepClick={props.onStepNavigate} />
         </div>
 
+        {/* Save creates the recipe in the DB — enabled only after a preview, so the user
+            always sees the data first (ADR 0009). Preview records itself writes nothing. */}
         <Button
           variant="secondary"
           size="sm"
           icon="bookmark"
-          disabled={props.recipeBusy || !props.selectorResult || props.fields.length === 0 || !props.recipeName.trim()}
+          disabled={props.recipeBusy || !props.preview || props.fields.length === 0 || !props.recipeName.trim()}
           onClick={props.onSaveRecipe}
+          title={!props.preview ? "Preview records first to see the data, then save" : undefined}
         >
           {props.recipeBusy ? "Saving…" : "Save recipe"}
         </Button>
@@ -1196,18 +1237,43 @@ export function BuilderView(props: BuilderProps) {
             {/* This item's data (ADR 0009): every value found in the selected card, with a
                 field name. Tick rows to collect them — or click them on the screenshot; both
                 drive the SAME selection. Nothing extracts until "Preview records". */}
-            {discoveredFields.length > 0 ? (
+            {/* This item's data (ADR 0009): each extractable value with a field name. Tick
+                rows to collect them — or click a value on the screenshot, which highlights
+                that element's attributes (Text/Link/Image) here so you tick which to keep.
+                One shared selection; nothing extracts until "Preview records". */}
+            {props.selectorResult ? (
               <Card className="card-pad" style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 10 }}>
-                  Fields in this item — <strong style={{ color: "var(--text-primary)" }}>tick what to collect</strong>{" "}
-                  (or click it in the page):
+                  {allCandidates.length > 0 ? (
+                    <>
+                      <strong style={{ color: "var(--text-primary)" }}>Tick what to collect</strong> — or click a value
+                      in the page to see its options here.
+                    </>
+                  ) : (
+                    <>
+                      <strong style={{ color: "var(--text-primary)" }}>Click a value in the page</strong> (title,
+                      price, image…) to add it here.
+                    </>
+                  )}
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {discoveredFields.map((c) => {
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {allCandidates.map((c) => {
                     const on = selectedKeys.has(c.key);
+                    const focused = c.nodeId === focusedNodeId;
                     const name = fieldNameOverrides[c.key] ?? c.suggestedName;
                     return (
-                      <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div
+                        key={c.key}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "4px 6px",
+                          borderRadius: 6,
+                          background: focused ? "var(--accent-softer)" : "transparent",
+                          border: focused ? "1px solid var(--accent-soft)" : "1px solid transparent"
+                        }}
+                      >
                         <input
                           type="checkbox"
                           checked={on}
@@ -1219,7 +1285,7 @@ export function BuilderView(props: BuilderProps) {
                           value={name}
                           onChange={(e) => setFieldNameOverrides((p) => ({ ...p, [c.key]: e.target.value }))}
                           disabled={!on}
-                          style={{ width: 110, flexShrink: 0, opacity: on ? 1 : 0.5 }}
+                          style={{ width: 104, flexShrink: 0, opacity: on ? 1 : 0.5 }}
                         />
                         <span
                           title={c.value}

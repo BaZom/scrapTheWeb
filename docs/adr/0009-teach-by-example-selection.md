@@ -243,6 +243,26 @@ with all matched items.
 desync) — deferring selector generation + extraction to the explicit "Preview records" click
 matches the spec (selecting ≠ previewing) and keeps selecting instant.
 
+### Field workflow refinements — single pages, multi-attribute, save gating
+
+Three fixes after the first cut of the one-selection workflow:
+
+- **Single-record pages worked via clicks (regression fix).** Auto-discovery is scoped to a
+  selected *card*, which single pages don't have — so they'd lost field selection entirely.
+  Now clicking any value on a single page adds its attribute rows to the table (page-wide),
+  and "Preview records" generates **page-wide unique** selectors (`single: true`) instead of
+  container-relative ones. Discovery stays list-only; single relies on clicks.
+- **One element → choose among its attributes (group rows, tick multiple).** Clicking an
+  element no longer auto-picks one attribute. It surfaces **all** of that element's
+  extractable values (Text / Link / Image) as rows and **highlights them together**; the user
+  ticks any/all — each ticked attribute becomes its own field (e.g. a linked title →
+  `title` + `title_link`). Implemented via a shared `candidatesForNode` helper (used by both
+  discovery and clicks), `clickedCandidates` (rows added by clicking), and `focusedNodeId`
+  (the highlighted group). The table merges discovered + clicked candidates into `allCandidates`.
+- **Save after preview.** "Save recipe" (which creates the recipe in the DB — the only write,
+  see CLAUDE.md data-flow) is disabled until a preview exists, so the user always sees the
+  extracted data before committing. "Preview records" remains a no-write dry-run.
+
 ### Concepts to look up (follow-up)
 
 - **Mode affordances** — when a single canvas serves two intents (pick items vs map fields),
