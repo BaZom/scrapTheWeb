@@ -408,6 +408,19 @@ export function BuilderView(props: BuilderProps) {
     });
   }
 
+  // Select-all for the fields table: tick every current candidate, or untick them all if
+  // they're already all on. Operates only on `allCandidates` so it never touches keys that
+  // are no longer offered (e.g. after switching items).
+  function toggleAllFields() {
+    setSelectedKeys((prev) => {
+      const keys = allCandidates.map((c) => c.key);
+      const allOn = keys.length > 0 && keys.every((k) => prev.has(k));
+      const next = new Set(prev);
+      keys.forEach((k) => (allOn ? next.delete(k) : next.add(k)));
+      return next;
+    });
+  }
+
   // The selected fields, resolved to {key, nodeId, extract, name, value} with FINAL unique
   // names (deduped here so the committed field names match — lets a removed column untick its
   // candidate). Reads the current item's candidates only (ADR 0009).
@@ -1212,7 +1225,38 @@ export function BuilderView(props: BuilderProps) {
                 <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>Finding similar items…</p>
               ) : null}
             </div>
-          ) : null}
+          ) : (
+            // Single-page anchor — the detail-page counterpart of the list "Item" block, so
+            // the panel opens with a clear "what is this / what do I do" instead of jumping
+            // straight to an empty fields card (ux-polish: single-flow parity with list).
+            <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: "var(--text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em"
+                  }}
+                >
+                  Page
+                </div>
+                <Badge tone={props.fields.length > 0 ? "success" : "outline"} dot={props.fields.length > 0}>
+                  {props.fields.length > 0 ? `${props.fields.length} details` : "Detail page"}
+                </Badge>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Icon name="file" size={14} style={{ color: "var(--accent-deep)" }} />
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Collecting from this page</span>
+              </div>
+              <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.45, margin: "8px 0 0" }}>
+                This page is one record.{" "}
+                <strong style={{ color: "var(--text-secondary)" }}>Click each value you want</strong> on the page —
+                title, price, image — to collect it.
+              </p>
+            </div>
+          )}
 
           <div style={{ padding: "16px 18px", flex: 1 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -1262,19 +1306,56 @@ export function BuilderView(props: BuilderProps) {
                 One shared selection; nothing extracts until "Preview records". */}
             {props.selectorResult ? (
               <Card className="card-pad" style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 10 }}>
-                  {allCandidates.length > 0 ? (
-                    <>
-                      <strong style={{ color: "var(--text-primary)" }}>Tick what to collect</strong> — or click a value
-                      in the page to see its options here.
-                    </>
-                  ) : (
-                    <>
-                      <strong style={{ color: "var(--text-primary)" }}>Click a value in the page</strong> (title,
-                      price, image…) to add it here.
-                    </>
-                  )}
-                </div>
+                {allCandidates.length === 0 ? (
+                  // Real empty state (not a buried one-liner) so the detail-page flow has the
+                  // same "here's your next move" affordance as list mode (ux-polish).
+                  <EmptyState>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <Icon name="cursor" size={16} style={{ color: "var(--accent-deep)", flexShrink: 0, marginTop: 1 }} />
+                      <div>
+                        <strong style={{ color: "var(--text-primary)" }}>Click a value on the page</strong> — a title,
+                        price or image. Its options (Text / Link / Image) appear here to tick.
+                      </div>
+                    </div>
+                  </EmptyState>
+                ) : null}
+                {allCandidates.length > 0 ? (
+                  (() => {
+                    const selectedCount = allCandidates.filter((c) => selectedKeys.has(c.key)).length;
+                    const allOn = selectedCount === allCandidates.length;
+                    return (
+                      <div style={{ marginBottom: 10 }}>
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            fontSize: 12.5,
+                            color: "var(--text-secondary)",
+                            cursor: "pointer"
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={allOn}
+                            ref={(el) => {
+                              if (el) el.indeterminate = selectedCount > 0 && !allOn;
+                            }}
+                            onChange={toggleAllFields}
+                            style={{ flexShrink: 0, cursor: "pointer" }}
+                          />
+                          <strong style={{ color: "var(--text-primary)" }}>Select all</strong>
+                          <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--text-muted)" }}>
+                            {selectedCount}/{allCandidates.length}
+                          </span>
+                        </label>
+                        <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: "4px 0 0", paddingLeft: 24 }}>
+                          …or click a value in the page to see its options here.
+                        </p>
+                      </div>
+                    );
+                  })()
+                ) : null}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {allCandidates.map((c) => {
                     const on = selectedKeys.has(c.key);
@@ -1370,15 +1451,10 @@ export function BuilderView(props: BuilderProps) {
             >
               <Icon name="wand" size={13} style={{ color: "var(--accent-deep)", flexShrink: 0, marginTop: 2 }} />
               <div>
-                <strong style={{ color: "var(--text-primary)" }}>Tip:</strong> click any element in the page to map it. Switch the extraction type if you need{" "}
-                <span className="mono" style={{ background: "white", padding: "0 4px", borderRadius: 3 }}>
-                  href
-                </span>
-                ,{" "}
-                <span className="mono" style={{ background: "white", padding: "0 4px", borderRadius: 3 }}>
-                  src
-                </span>
-                , or a custom attribute.
+                <strong style={{ color: "var(--text-primary)" }}>Tip:</strong>{" "}
+                {props.recipeShape === "single"
+                  ? "click each value on the page to collect it — click a linked title to grab its text and link together."
+                  : "click a value in the item, then tick Text, Link, or Image — you can take several from one element."}
               </div>
             </div>
           </div>

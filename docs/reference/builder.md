@@ -55,8 +55,9 @@ Once an item is picked the builder shows, in the right panel, a **table of that 
 | ☐ | title_link      | /p/iphone | Link |
 | ☐ | price           | £799      | Text |
 
-The user **ticks** what to collect. Two equivalent ways, **one shared selection** (so they
-can't conflict):
+The user **ticks** what to collect (a **Select all** header checkbox — with an indeterminate
+state when only some rows are ticked — toggles every row at once). Two equivalent ways,
+**one shared selection** (so they can't conflict):
 - **tick a row** in the table, or
 - **click the value on the screenshot** — which surfaces *all* that element's attributes
   (Text / Link / Image) as grouped, highlighted rows so the user picks one or several (a
@@ -64,7 +65,11 @@ can't conflict):
 
 The **selected card is spotlighted** ("Editing this item") so it's unmistakable. Values shown
 are the current item's own values, read from the render snapshot (instant). **Single pages**
-have no card, so the user just clicks values on the page to add them (matched page-wide).
+have no card, so the user just clicks values on the page to add them (matched page-wide). The
+single flow opens with a **"Page" anchor** in the inspector — the detail-page counterpart of
+the list "Item" block (label, `Detail page` / `N details` badge, "Collecting from this page")
+— and the fields card shows a real **empty state** ("Click a value on the page…") until the
+first value is ticked (ADR 0010).
 
 ### 1.5 Preview records (the only thing that extracts)
 Selecting fields extracts **nothing**. Clicking **Preview records** does one backend call that

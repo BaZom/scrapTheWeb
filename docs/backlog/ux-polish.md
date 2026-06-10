@@ -1,15 +1,14 @@
 # Planned — builder UX polish
 
-**Status:** planned · **Area:** builder UI
+**Status:** in progress (single-flow DONE, icon/spacing OPEN) · **Area:** builder UI
 
-## Single-item (detail) page design & UX
-The single-page flow (no repeating card; the user clicks values page-wide to add fields) is
-functional but rougher than the list flow. Give it a deliberate layout + affordance pass so
-it reads as intentionally as list mode — clear "what do I click?" guidance, a sensible empty
-state, and parity with the list-mode fields table.
-
-- Touches `frontend/app/components/builder-view.tsx` (the `recipeShape === "single"` branches)
-  and the field-selection/empty-state UI.
+## Single-item (detail) page design & UX — DONE (ADR 0010)
+The single-page flow (no repeating card; the user clicks values page-wide to add fields) was
+functional but rougher than the list flow. Shipped a deliberate layout + affordance pass:
+a **"Page" anchor** in the inspector (parity with the list "Item" block), a real fields-card
+**empty state**, and an **on-message Tip** (dropped the dead `href`/`src`/attribute copy).
+Frontend-only, in `builder-view.tsx` single branches. See `docs/reference/builder.md` §1.4.
+Live-stack manual eyeball still recommended.
 
 ## Icon & spacing pass
 Tighten icon sizing/pacing, spacing rhythm, and visual consistency across the builder —
