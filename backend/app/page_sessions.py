@@ -27,7 +27,6 @@ from app.resources import make_s3_client
 from app.selector_generator import (
     SelectorMode,
     generate_selector,
-    infer_selector,
     preview_from_snapshot,
 )
 from app.ssrf import validate_public_render_url
@@ -114,17 +113,6 @@ class SelectorRequest(BaseModel):
     model_config = ConfigDict(strict=True)
 
     nodeId: str = Field(min_length=1, max_length=80)
-    mode: SelectorMode
-    containerSelector: str | None = Field(default=None, max_length=512)
-
-
-class InferSelectorRequest(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    # Teach-by-example (ADR 0009): the node IDs of every example the user clicked. The
-    # inferred selector covers all of them. Relative field selectors pass the container
-    # selector so inference runs inside each matched container.
-    positiveNodeIds: list[str] = Field(min_length=1, max_length=20)
     mode: SelectorMode
     containerSelector: str | None = Field(default=None, max_length=512)
 
@@ -458,32 +446,6 @@ async def page_session_selector(
     try:
         selector_result = generate_selector(
             raw_nodes, payload.nodeId, payload.mode, payload.containerSelector
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return SelectorResponse.model_validate(selector_result)
-
-
-@router.post("/{session_id}/selector/infer", response_model=SelectorResponse)
-async def page_session_selector_infer(
-    session_id: UUID,
-    payload: InferSelectorRequest,
-    request: Request,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> SelectorResponse:
-    # Teach-by-example (ADR 0009): infer a selector covering every clicked example.
-    await _org_scoped_page_session(session_id, user, session)
-    session_payload = await _load_page_session_payload(request, session_id)
-    raw_nodes = session_payload.get("domNodes", [])
-    if not isinstance(raw_nodes, list):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Page session DOM payload is invalid",
-        )
-    try:
-        selector_result = infer_selector(
-            raw_nodes, payload.positiveNodeIds, payload.mode, payload.containerSelector
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

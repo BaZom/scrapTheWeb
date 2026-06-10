@@ -1,0 +1,5 @@
+<svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="small seed swirl arrow">
+  <path d="M48 18 C25 19 21 45 40 49 C54 52 59 36 46 34 C36 33 35 45 45 48" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 7"/>
+  <path d="M45 48 L37 50 L42 56" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="51" cy="18" r="3" fill="currentColor"/>
+</svg>

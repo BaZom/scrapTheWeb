@@ -1,4 +1,4 @@
-from app.selector_generator import generate_selector, infer_selector, preview_from_snapshot
+from app.selector_generator import generate_selector, preview_from_snapshot
 
 
 def _node(node_id: str, **overrides: object) -> dict[str, object]:
@@ -99,37 +99,6 @@ def _mixed_grid() -> list[dict[str, object]]:
                 )
             )
     return nodes
-
-
-def test_infer_broadens_to_cover_both_example_kinds() -> None:
-    # One example only matches its own class (3 cards); adding a second-kind example must
-    # broaden to a selector covering both — here the shared <article> tag (all 5).
-    nodes = _mixed_grid()
-    assert generate_selector(nodes, "prod-0", "container")["matchCount"] == 3
-    result = infer_selector(nodes, ["prod-0", "feat-0"], "container")
-    assert result["strategy"] == "inferred"
-    matched = set(result["matchedNodeIds"])
-    assert {"prod-0", "feat-0"}.issubset(matched)
-    assert result["matchCount"] == 5
-
-
-def test_infer_single_example_matches_generate() -> None:
-    nodes = _build_grid(3)
-    inferred = infer_selector(nodes, ["card-0"], "container")
-    generated = generate_selector(nodes, "card-0", "container")
-    assert set(inferred["matchedNodeIds"]) == set(generated["matchedNodeIds"])
-
-
-def test_infer_relative_matches_cells_across_all_containers() -> None:
-    nodes = _build_grid(3)
-    for i in range(3):
-        nodes.append(
-            _node(f"title-{i}", tag="h3", text="Title", parentNodeId=f"card-{i}", classes=["title"])
-        )
-    result = infer_selector(
-        nodes, ["title-0", "title-1"], "node", container_selector="article.product_pod"
-    )
-    assert set(result["matchedNodeIds"]) == {"title-0", "title-1", "title-2"}
 
 
 def test_preview_from_snapshot_extracts_all_items_from_the_snapshot() -> None:

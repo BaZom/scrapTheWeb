@@ -1,0 +1,21 @@
+<svg width="180" height="80" viewBox="0 0 180 80" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Collecting data animation">
+  <style>
+    .dot { animation: pulse 1s ease-in-out infinite; transform-origin: center; }
+    .d2 { animation-delay: .18s; }
+    .d3 { animation-delay: .36s; }
+    .stem, .leaf { stroke-dasharray: 100; stroke-dashoffset: 100; animation: draw 1.1s ease-out infinite; }
+    .leaf { animation-delay: .25s; }
+    @keyframes pulse { 0%,100% { opacity:.2; transform: scale(.85); } 50% { opacity:1; transform: scale(1.15); } }
+    @keyframes draw { 0% { stroke-dashoffset: 100; } 65%,100% { stroke-dashoffset: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .dot, .stem, .leaf { animation: none; opacity: .7; stroke-dashoffset: 0; }
+    }
+  </style>
+  <circle class="dot" cx="36" cy="40" r="4" fill="currentColor"/>
+  <circle class="dot d2" cx="52" cy="40" r="4" fill="currentColor"/>
+  <circle class="dot d3" cx="68" cy="40" r="4" fill="currentColor"/>
+  <ellipse cx="130" cy="62" rx="20" ry="4" fill="currentColor" opacity=".12"/>
+  <path class="stem" d="M130 60 C130 50 130 41 130 30" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  <path class="leaf" d="M130 46 C120 45 117 36 126 35 C129 39 130 42 130 46Z" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path class="leaf" d="M130 43 C140 41 143 32 134 32 C131 36 130 39 130 43Z" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

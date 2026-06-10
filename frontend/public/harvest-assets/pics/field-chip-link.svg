@@ -1,0 +1,6 @@
+<svg width="96" height="48" viewBox="0 0 96 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="link field chip">
+  <rect x="4" y="8" width="88" height="32" rx="16" stroke="currentColor" stroke-width="2"/>
+  <path d="M28 24H68" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="22" cy="24" r="5" stroke="currentColor" stroke-width="2"/>
+  <circle cx="74" cy="24" r="5" stroke="currentColor" stroke-width="2"/>
+</svg>

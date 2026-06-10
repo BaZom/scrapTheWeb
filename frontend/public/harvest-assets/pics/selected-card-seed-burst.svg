@@ -1,0 +1,13 @@
+<svg width="220" height="160" viewBox="0 0 220 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="selected result card seed burst">
+  <rect x="52" y="36" width="116" height="88" rx="14" stroke="currentColor" stroke-width="2"/>
+  <circle cx="66" cy="50" r="10" fill="currentColor"/>
+  <text x="66" y="54" text-anchor="middle" font-size="10" fill="white" font-family="monospace">1</text>
+  <path d="M75 74H143M75 90H131M75 106H151" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path d="M26 38C48 10 82 20 108 37C137 56 166 39 194 20" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3 8" opacity=".35"/>
+  <circle cx="28" cy="38" r="3" fill="currentColor"/>
+  <circle cx="58" cy="22" r="2.4" fill="#B99A6B"/>
+  <circle cx="91" cy="27" r="3.2" fill="currentColor"/>
+  <circle cx="125" cy="46" r="2.8" fill="#B99A6B"/>
+  <circle cx="161" cy="40" r="3" fill="currentColor"/>
+  <circle cx="194" cy="20" r="3.5" fill="currentColor"/>
+</svg>

@@ -468,6 +468,130 @@ function RecordsTable({ records }: { records: ExtractionRun["records"] }) {
   );
 }
 
+type RunChangeKind = "new" | "changed" | "removed";
+type RunChangeEvent = ExtractionRun["changes"]["new"][number];
+
+function RunChangesReview({ run }: { run: ExtractionRun }) {
+  const total = runChangeCount(run);
+  const group = statusGroup(run.status);
+  if (total === 0) {
+    return (
+      <EmptyState
+        icon="diff"
+        title={group === "completed" ? "No changes detected" : "No changes yet"}
+        description={
+          group === "completed"
+            ? "This run matched the previous stored result set."
+            : "Changes will appear here as records are compared."
+        }
+      />
+    );
+  }
+
+  const sections: Array<{ kind: RunChangeKind; label: string; items: RunChangeEvent[] }> = [
+    { kind: "new", label: "New", items: run.changes.new },
+    { kind: "changed", label: "Changed", items: run.changes.changed },
+    { kind: "removed", label: "Removed", items: run.changes.removed }
+  ];
+
+  return (
+    <div style={{ display: "grid", gap: 12, padding: 14 }}>
+      {sections
+        .filter((section) => section.items.length > 0)
+        .map((section) => (
+          <div key={section.kind} style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Badge tone={section.kind === "removed" ? "danger" : section.kind === "changed" ? "warning" : "success"}>
+                {section.label}
+              </Badge>
+              <span className="muted tabular" style={{ fontSize: 12 }}>
+                {fmtInt(section.items.length)}
+              </span>
+            </div>
+            {section.items.slice(0, 8).map((event) => (
+              <RunChangeRow key={event.id} kind={section.kind} event={event} />
+            ))}
+            {section.items.length > 8 ? (
+              <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+                +{fmtInt(section.items.length - 8)} more {section.label.toLowerCase()} changes
+              </div>
+            ) : null}
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function RunChangeRow({ event, kind }: { event: RunChangeEvent; kind: RunChangeKind }) {
+  const data = kind === "removed" ? event.oldData : event.newData;
+  const fields = Object.entries(data ?? {}).slice(0, 3);
+  const tone =
+    kind === "removed"
+      ? { bg: "var(--danger-bg)", fg: "var(--danger-fg)", icon: "−" }
+      : kind === "changed"
+        ? { bg: "var(--warning-bg)", fg: "var(--warning-fg)", icon: "~" }
+        : { bg: "var(--success-bg)", fg: "var(--success-fg)", icon: "+" };
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 6,
+        padding: "9px 10px",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "white",
+        minWidth: 0
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: 5,
+            background: tone.bg,
+            color: tone.fg,
+            display: "grid",
+            placeItems: "center",
+            fontSize: 12,
+            fontWeight: 800
+          }}
+        >
+          {tone.icon}
+        </span>
+        <span
+          className="mono"
+          style={{
+            fontSize: 11.5,
+            color: "var(--text-secondary)",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          }}
+        >
+          {event.recordKey}
+        </span>
+      </div>
+      {fields.length > 0 ? (
+        <div style={{ display: "grid", gap: 3 }}>
+          {fields.map(([key, value]) => (
+            <div key={key} style={{ display: "grid", gridTemplateColumns: "88px minmax(0, 1fr)", gap: 8, fontSize: 11.5 }}>
+              <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {key}
+              </span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {renderCell(value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function WorkflowDiagram() {
   const steps: Array<{ icon: IconName; label: string }> = [
     { icon: "monitor", label: "Source" },
@@ -975,12 +1099,18 @@ export function MonitorDetailView() {
 // ======================================================================
 export function RunsView({
   error,
+  exportBusy,
   loading,
+  onDownloadExport,
   onOpenRun,
   recipes,
-  runs
+  runs,
+  selectedRunId
 }: WorkspaceDataProps & {
+  exportBusy: "csv" | "json" | null;
+  onDownloadExport: (runId: string, format: "csv" | "json") => void;
   onOpenRun: (run: ExtractionRun) => void;
+  selectedRunId: string | null;
 }) {
   const [filter, setFilter] = useState<"all" | "running" | "completed" | "failed">("all");
   const [query, setQuery] = useState("");
@@ -1010,6 +1140,14 @@ export function RunsView({
   const latestCompletedWithRecords = sorted.find(
     (r) => r.status === "completed" && r.records.length > 0
   );
+  const selectedRun =
+    (selectedRunId ? sorted.find((r) => r.id === selectedRunId) : null) ??
+    latestCompletedWithRecords ??
+    sorted[0] ??
+    null;
+  const selectedRunGroup = selectedRun ? statusGroup(selectedRun.status) : null;
+  const selectedRunHost = selectedRun ? domainForUrl(selectedRun.url) : "";
+  const selectedRunCanExport = selectedRunGroup === "completed";
 
   return (
     <>
@@ -1029,6 +1167,101 @@ export function RunsView({
         <KPI icon="alert" label="Failed" value={fmtInt(counts.failed)} />
         <KPI icon="records" label="Records extracted" value={fmtInt(totalRecords)} />
       </div>
+
+      {selectedRun ? (
+        <Card style={{ marginBottom: 18 }}>
+          <CardHeader
+            title="Run review"
+            sub={`${recipeNameFor(selectedRun, recipes)} · ${selectedRunHost} · run ${shortId(selectedRun.id)}`}
+            action={
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <StatusBadge status={selectedRun.status} />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="csv"
+                  disabled={!selectedRunCanExport || exportBusy === "csv"}
+                  onClick={() => onDownloadExport(selectedRun.id, "csv")}
+                >
+                  CSV
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="json"
+                  disabled={!selectedRunCanExport || exportBusy === "json"}
+                  onClick={() => onDownloadExport(selectedRun.id, "json")}
+                >
+                  JSON
+                </Button>
+              </div>
+            }
+          />
+          <div style={{ padding: "0 18px 18px", display: "grid", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+              <KPI icon="records" label="Real records" value={selectedRunGroup === "completed" ? fmtInt(selectedRun.records.length) : "—"} />
+              <KPI icon="diff" label="Changes" value={selectedRunGroup === "completed" ? fmtInt(runChangeCount(selectedRun)) : "—"} />
+              <KPI icon="clock" label="Duration" value={durationFromIso(selectedRun.startedAt, selectedRun.finishedAt)} />
+              <KPI icon="calendar" label="Started" value={relativeFromIso(selectedRun.startedAt)} />
+            </div>
+
+            {selectedRun.errorMessage ? (
+              <div
+                role="status"
+                style={{
+                  border: "1px solid var(--danger)",
+                  background: "var(--danger-bg)",
+                  color: "var(--danger-fg)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  fontSize: 12.5
+                }}
+              >
+                {selectedRun.errorMessage}
+              </div>
+            ) : null}
+
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(300px, 0.65fr)", gap: 16 }}>
+              <div className="table-wrap" style={{ minWidth: 0 }}>
+                <div style={{ padding: "12px 14px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="records" size={14} style={{ color: "var(--accent-deep)" }} />
+                  <div style={{ fontSize: 13, fontWeight: 650 }}>Real data</div>
+                  <div className="grow" />
+                  <Badge tone="outline">{Math.min(selectedRun.records.length, 25)} shown</Badge>
+                </div>
+                {selectedRun.records.length > 0 ? (
+                  <RecordsTable records={selectedRun.records.slice(0, 25)} />
+                ) : (
+                  <EmptyState
+                    icon="records"
+                    title={selectedRunGroup === "completed" ? "No records extracted" : "Run is working"}
+                    description={
+                      selectedRunGroup === "completed"
+                        ? "This completed run did not return any records."
+                        : "Records will appear here while the run progresses."
+                    }
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  background: "var(--surface-soft)",
+                  minWidth: 0,
+                  overflow: "hidden"
+                }}
+              >
+                <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <Icon name="diff" size={14} style={{ color: "var(--accent-deep)" }} />
+                  <div style={{ fontSize: 13, fontWeight: 650 }}>Changes review</div>
+                </div>
+                <RunChangesReview run={selectedRun} />
+              </div>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <Tabs
         value={filter}
@@ -1085,8 +1318,12 @@ export function RunsView({
               {visible.map((r) => {
                 const group = statusGroup(r.status);
                 const host = domainForUrl(r.url);
+                const isSelected = selectedRun?.id === r.id;
                 return (
-                  <tr key={r.id}>
+                  <tr
+                    key={r.id}
+                    style={isSelected ? { background: "var(--surface-soft)" } : undefined}
+                  >
                     <td className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                       {shortId(r.id)}
                     </td>
@@ -1129,6 +1366,7 @@ export function RunsView({
                           className="icon-btn"
                           style={{ width: 28, height: 28 }}
                           onClick={() => onOpenRun(r)}
+                          title="Review run"
                         >
                           <Icon name="chevronRight" size={14} />
                         </button>
@@ -1142,15 +1380,6 @@ export function RunsView({
         </div>
       )}
 
-      {latestCompletedWithRecords ? (
-        <Card>
-          <CardHeader
-            title="Latest extracted records"
-            sub={`From ${recipeNameFor(latestCompletedWithRecords, recipes)} · run ${shortId(latestCompletedWithRecords.id)} · ${relativeFromIso(latestCompletedWithRecords.finishedAt)}`}
-          />
-          <RecordsTable records={latestCompletedWithRecords.records.slice(0, 10)} />
-        </Card>
-      ) : null}
     </>
   );
 }

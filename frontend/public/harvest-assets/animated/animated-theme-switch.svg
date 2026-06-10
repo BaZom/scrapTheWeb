@@ -1,0 +1,29 @@
+<svg width="260" height="100" viewBox="0 0 260 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Theme switch animation">
+  <style>
+    .knob { animation: switchTheme 3s ease-in-out infinite; }
+    .accent { animation: accentFade 3s ease-in-out infinite; }
+    @keyframes switchTheme {
+      0%,25% { transform: translateX(0); }
+      38%,62% { transform: translateX(62px); }
+      75%,100% { transform: translateX(124px); }
+    }
+    @keyframes accentFade {
+      0%,25% { fill: currentColor; opacity: 1; }
+      38%,62% { fill: #6F8F62; opacity: 1; }
+      75%,100% { fill: #B99A6B; opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .knob, .accent { animation: none; }
+    }
+  </style>
+  <rect x="28" y="30" width="204" height="40" rx="20" stroke="currentColor" stroke-width="2"/>
+  <g class="knob">
+    <rect x="34" y="36" width="52" height="28" rx="14" fill="currentColor"/>
+  </g>
+  <circle class="accent" cx="120" cy="50" r="5"/>
+  <circle cx="148" cy="50" r="5" fill="currentColor" opacity=".35"/>
+  <circle cx="176" cy="50" r="5" fill="#B99A6B"/>
+  <path d="M210 61C210 55 210 49 210 42" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path d="M210 52C204 51 202 46 208 45C210 47 210 50 210 52Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M210 50C216 48 218 43 213 43C211 45 210 48 210 50Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

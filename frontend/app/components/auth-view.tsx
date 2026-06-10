@@ -53,24 +53,18 @@ export function AuthView({
           minHeight: "100vh"
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div className="brand-mark" style={{ width: 30, height: 30, borderRadius: 9 }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M5 5L12 2.5L19 5V12C19 16.5 15.5 20 12 21C8.5 20 5 16.5 5 12V5Z"
-                fill="white"
-                fillOpacity="0.92"
-              />
-              <path
-                d="M9 11L11 13L15.5 8.5"
-                stroke="var(--accent-deep)"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/harvest-assets/pics/harvestly-wordmark.png"
+            width={178}
+            height={62}
+            alt="Harvestly"
+            className="auth-brand-wordmark"
+          />
+          <div style={{ maxWidth: 180, fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.3 }}>
+            turn websites into structured data
           </div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>ScrapTheWeb</div>
         </div>
 
         <div style={{ flex: 1, display: "flex", alignItems: "center", padding: "32px 0" }}>
@@ -99,7 +93,7 @@ export function AuthView({
                 </div>
 
                 <h1 style={{ margin: 0, fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em" }}>
-                  {mode === "signin" ? "Sign in to ScrapTheWeb" : "Start your 14-day trial"}
+                  {mode === "signin" ? "Sign in to Harvestly" : "Start your 14-day trial"}
                 </h1>
                 <p style={{ marginTop: 6, marginBottom: 22, color: "var(--text-secondary)", fontSize: 13.5 }}>
                   Turn public pages into structured records, alerts, and exports.
@@ -253,7 +247,7 @@ export function AuthView({
                       </>
                     ) : (
                       <>
-                        Already on ScrapTheWeb?{" "}
+                        Already on Harvestly?{" "}
                         <button
                           type="button"
                           onClick={() => onModeChange("signin")}
@@ -278,7 +272,7 @@ export function AuthView({
         </div>
 
         <div style={{ fontSize: 11.5, color: "var(--text-muted)", display: "flex", gap: 14, flexWrap: "wrap" }}>
-          <span>© 2026 ScrapTheWeb</span>
+          <span>© 2026 Harvestly</span>
           <span>•</span>
           <a>Status</a>
           <a>Privacy</a>

@@ -24,10 +24,10 @@ export type NavItem = {
 };
 
 export const navItems: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: "dashboard" },
+  { id: "builder", label: "Builder", icon: "wand" },
+  { id: "dashboard", label: "Overview", icon: "dashboard" },
   { id: "monitors", label: "Monitors", icon: "monitor", badge: "Soon" },
   { id: "recipes", label: "Recipes", icon: "recipe" },
-  { id: "builder", label: "Builder", icon: "wand" },
   { id: "runs", label: "Runs", icon: "runs" },
   { id: "exports", label: "Exports", icon: "exports" }
 ];

@@ -1,0 +1,16 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Recipe saved animation">
+  <style>
+    .circle { stroke-dasharray: 300; stroke-dashoffset: 300; animation: drawCircle 1s ease-out forwards; }
+    .check { stroke-dasharray: 80; stroke-dashoffset: 80; animation: drawCheck .55s ease-out .55s forwards; }
+    .sprout { stroke-dasharray: 130; stroke-dashoffset: 130; animation: drawCheck .7s ease-out .8s forwards; }
+    @keyframes drawCircle { to { stroke-dashoffset: 0; } }
+    @keyframes drawCheck { to { stroke-dashoffset: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .circle, .check, .sprout { animation:none; stroke-dashoffset:0; }
+    }
+  </style>
+  <circle class="circle" cx="80" cy="80" r="56" stroke="currentColor" stroke-width="3" opacity=".5"/>
+  <path class="check" d="M54 79 L72 97 L110 59" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="80" cy="128" rx="24" ry="5" fill="currentColor" opacity=".12"/>
+  <path class="sprout" d="M80 126C80 117 80 109 80 99M80 114C72 113 69 106 77 105C79 108 80 111 80 114M80 112C89 110 91 103 83 103C81 106 80 109 80 112" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

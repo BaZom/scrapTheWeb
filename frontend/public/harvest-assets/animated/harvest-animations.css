@@ -1,0 +1,48 @@
+@keyframes harvest-seed-drift {
+  0% {
+    transform: translate(0, 0) scale(0.72) rotate(0deg);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: translate(var(--seed-x), var(--seed-y)) scale(1) rotate(22deg);
+    opacity: 0;
+  }
+}
+
+.harvest-seed-particle {
+  position: absolute;
+  width: 4px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px 999px 999px 0;
+  animation: harvest-seed-drift 1150ms ease-in-out forwards;
+  animation-delay: var(--seed-delay);
+}
+
+@keyframes harvest-soft-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: .82;
+  }
+
+  50% {
+    transform: scale(1.025);
+    opacity: 1;
+  }
+}
+
+.harvest-soft-pulse {
+  animation: harvest-soft-pulse 1600ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harvest-seed-particle,
+  .harvest-soft-pulse {
+    animation: none !important;
+  }
+}

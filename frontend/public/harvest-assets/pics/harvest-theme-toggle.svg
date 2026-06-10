@@ -1,0 +1,9 @@
+<svg width="180" height="72" viewBox="0 0 180 72" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="theme toggle harvest">
+  <rect x="12" y="16" width="156" height="40" rx="20" stroke="currentColor" stroke-width="2"/>
+  <rect x="18" y="22" width="52" height="28" rx="14" fill="currentColor"/>
+  <path d="M95 46C95 39 95 33 95 26" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path d="M95 36C89 35 87 30 93 29C95 31 95 34 95 36Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M95 35C101 33 103 28 98 28C96 30 95 33 95 35Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="132" cy="36" r="4" fill="#B99A6B"/>
+  <circle cx="148" cy="36" r="4" fill="currentColor" opacity=".45"/>
+</svg>

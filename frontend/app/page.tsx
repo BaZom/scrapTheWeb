@@ -18,7 +18,6 @@ import {
   downloadRunExport,
   fetchScreenshot,
   generateSelector,
-  inferSelector,
   getDashboard,
   getRun,
   streamRunEvents,
@@ -83,7 +82,6 @@ export default function Home() {
     pageSession,
     selectedNode,
     selectorResult,
-    containerExampleIds,
     recipeShape,
     pickMode,
     fields,
@@ -104,8 +102,8 @@ export default function Home() {
   const [selectorBusy, setSelectorBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [recipeBusy, setRecipeBusy] = useState(false);
-  const [runBusy, setRunBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState<"csv" | "json" | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   // Set to a restored draft's sessionId so the screenshot-restore effect knows to
@@ -454,32 +452,6 @@ export default function Home() {
     }
   }
 
-  // Teach-by-example (ADR 0009): the user clicked another item we missed. Re-infer the item
-  // selector to cover every example so far; the count + outline grow. No CSS surfaced.
-  async function handleAddItemExample(node: DomNode) {
-    if (!session || !pageSession) return;
-    const ids = [...containerExampleIds, node.nodeId];
-    dispatch({ type: "container_example_added", node });
-    setSelectorBusy(true);
-    setError(null);
-    try {
-      const result = await inferSelector(pageSession.sessionId, ids, session.access_token, {
-        mode: "container"
-      });
-      dispatch({ type: "container_selector_inferred", result });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not include that item");
-    } finally {
-      setSelectorBusy(false);
-    }
-  }
-
-  // "Start over" — re-pick from the first example, dropping the extra examples.
-  function handleResetItemExamples() {
-    const first = pageSession?.domNodes.find((n) => n.nodeId === containerExampleIds[0]);
-    if (first) handleNodeSelect(first);
-  }
-
   // Preview records (ADR 0009): the only thing that extracts. ONE call to the snapshot
   // preview — the backend generates each selected field's selector and reads its value from
   // the render snapshot (no S3 fetch, no HTML re-parse), returning all matched rows + the
@@ -551,7 +523,6 @@ export default function Home() {
 
   async function startRecipeRun(recipeId: string) {
     if (!session) return;
-    setRunBusy(true);
     setError(null);
     try {
       const recipe = recipes.find((c) => c.id === recipeId);
@@ -560,17 +531,11 @@ export default function Home() {
       const firstRead = await getRun(created.runId, session.access_token);
       dispatch({ type: "run_updated", run: firstRead });
       setRuns((prev) => [firstRead, ...prev.filter((r) => r.id !== firstRead.id)]);
-      setActiveView("builder");
+      setSelectedRunId(firstRead.id);
+      setActiveView("runs");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Recipe run failed");
-    } finally {
-      setRunBusy(false);
     }
-  }
-
-  async function handleRunRecipe() {
-    if (!savedRecipe) return;
-    await startRecipeRun(savedRecipe.id);
   }
 
   async function handleDownloadExport(runId: string, format: "csv" | "json") {
@@ -622,20 +587,12 @@ export default function Home() {
       savedRecipe,
       recipeBusy,
       onSaveRecipe: handleSaveRecipe,
-      run,
-      runBusy,
-      onRunRecipe: handleRunRecipe,
-      exportBusy,
-      onDownloadExport: handleDownloadExport,
       imageSize,
       onImageLoad: (size: { width: number; height: number }) =>
         dispatch({ type: "image_loaded", size }),
       renderBusy,
       error,
-      onNodeSelect: handleNodeSelect,
-      containerExampleIds,
-      onAddItemExample: handleAddItemExample,
-      onResetItemExamples: handleResetItemExamples
+      onNodeSelect: handleNodeSelect
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -645,7 +602,6 @@ export default function Home() {
       selectedNode,
       selectorResult,
       selectorBusy,
-      containerExampleIds,
       recipeShape,
       pickMode,
       pickerView,
@@ -656,9 +612,6 @@ export default function Home() {
       recipeName,
       savedRecipe,
       recipeBusy,
-      run,
-      runBusy,
-      exportBusy,
       imageSize,
       renderBusy,
       error
@@ -727,13 +680,16 @@ export default function Home() {
       {activeView === "runs" ? (
         <RunsView
           error={workspaceError}
+          exportBusy={exportBusy}
           loading={workspaceBusy}
           onOpenRun={(selected) => {
             dispatch({ type: "run_updated", run: selected });
-            setActiveView("builder");
+            setSelectedRunId(selected.id);
           }}
+          onDownloadExport={(id, format) => void handleDownloadExport(id, format)}
           recipes={recipes}
           runs={runs}
+          selectedRunId={selectedRunId}
         />
       ) : null}
       {activeView === "exports" ? (

@@ -10,8 +10,9 @@ in `docs/adr/`. Concrete, actionable tickets — open bugs and specific planned 
   server draft (schema + endpoints) would survive device switches and team handoff.
 - **Field transforms.** Post-process extracted values with no-code presets (trim, "numbers
   only", strip currency, first line, date parse). Touches `recipe_runner.py` + a per-field UI.
-- **Exclude / negative examples.** Item teach-by-example is include-only; add "not this" to
-  remove wrongly-grabbed items.
+- **Pattern refinement.** The current builder supports pick/re-pick, but not broadening or
+  excluding matched item sets. Add a no-code refinement model before relying on difficult
+  mixed-card pages.
 - **Per-card confidence strip.** Show a field's value sampled across several cards while
   selecting, so the user sees consistency before previewing.
 - **Mis-detection nudge.** When shape/candidate confidence is low, hint the user toward the

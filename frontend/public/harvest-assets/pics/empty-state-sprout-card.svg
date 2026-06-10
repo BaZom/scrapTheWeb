@@ -1,0 +1,9 @@
+<svg width="260" height="180" viewBox="0 0 260 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="empty state sprout card">
+  <rect x="30" y="25" width="200" height="130" rx="20" stroke="currentColor" stroke-width="2"/>
+  <path d="M75 118C105 105 154 105 185 118" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <ellipse cx="130" cy="118" rx="30" ry="6" fill="currentColor" opacity=".12"/>
+  <path d="M130 112C130 96 130 80 130 62" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M130 88C113 86 108 70 123 68C128 74 130 81 130 88Z" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M130 82C148 78 154 61 137 60C132 67 130 75 130 82Z" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M74 51H186M92 139H168" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".45"/>
+</svg>

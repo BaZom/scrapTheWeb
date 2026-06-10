@@ -8,38 +8,53 @@
    ========================================================= */
 
 :root {
-  /* Surfaces */
-  --bg-app: #F8F9FB;
-  --bg-canvas: #F2F3F6;
+  /* ---- Harvestly mood: monochrome ink-on-paper (ADR 0011) ---------------
+     The palette is deliberately black-and-white with thin, quiet borders.
+     The ONLY chromatic note is a single muted "sprout" green (+soil brown)
+     reserved for harvest/seed motifs and success — never UI chrome. */
+
+  /* Surfaces — paper white */
+  --bg-app: #FCFCFB;
+  --bg-canvas: #F4F4F1;
   --surface: #FFFFFF;
-  --surface-soft: #FAFBFC;
-  --surface-sunken: #F4F5F8;
+  --surface-soft: #FAFAF8;
+  --surface-sunken: #F2F2EF;
+  --surface-warm: #F7F5EF;
+  --surface-panel: #FFFEFB;
+  --surface-sidebar: #F6F5EF;
+  --surface-footer: #F7F5EF;
 
-  /* Borders */
-  --border: #E7E9EE;
-  --border-strong: #D7DAE0;
-  --border-soft: #EEF0F3;
-  --divider: #ECEEF2;
+  /* Borders — thin, warm-grey, low contrast (≈ black/10–18%) */
+  --border: #E4E3DE;
+  --border-strong: #D0CFC8;
+  --border-soft: #EDECE8;
+  --divider: #EAE9E4;
 
-  /* Text */
-  --text-primary: #0E1726;
-  --text-secondary: #475467;
-  --text-muted: #8A93A4;
-  --text-faint: #B5BBC6;
+  /* Text — ink */
+  --text-primary: #16150F;
+  --text-secondary: #56554D;
+  --text-muted: #8B8A80;
+  --text-faint: #B6B5AB;
   --text-onAccent: #FFFFFF;
 
-  /* Accents (teal) */
-  --accent: #0EA5A0;
-  --accent-strong: #0B8C88;
-  --accent-deep: #076E6B;
-  --accent-soft: #DCF6F4;
-  --accent-softer: #EEFAF9;
-  --accent-ring: rgba(14, 165, 160, 0.22);
+  /* Accent — monochrome ink (was teal). Selected borders / primary buttons
+     / focus all read as near-black, matching the Harvestly inspiration. */
+  --accent: #1A1913;
+  --accent-strong: #000000;
+  --accent-deep: #000000;
+  --accent-soft: #EAEAE4;
+  --accent-softer: #F3F3EF;
+  --accent-ring: rgba(0, 0, 0, 0.18);
 
-  /* Status */
-  --success: #0E9F6E;
-  --success-bg: #E7F8F1;
-  --success-fg: #066F4E;
+  /* Living "harvest" accent — used ONLY for sprout/seed/soil motifs. */
+  --sprout: #4F7A43;
+  --sprout-soft: #E9EFE5;
+  --soil: #6A5A45;
+
+  /* Status — success leans into the sprout green so the palette stays cohesive */
+  --success: #4F7A43;
+  --success-bg: #ECF1E8;
+  --success-fg: #3B5C32;
 
   --warning: #B86E0A;
   --warning-bg: #FCF1DE;
@@ -49,12 +64,13 @@
   --danger-bg: #FCECEC;
   --danger-fg: #9F2A30;
 
-  --info: #2563EB;
-  --info-bg: #E8F0FE;
-  --info-fg: #1748B7;
+  /* Info reads as neutral ink (monochrome) rather than blue. */
+  --info: #56554D;
+  --info-bg: #EFEEEA;
+  --info-fg: #3A3933;
 
-  --neutral-bg: #F1F3F6;
-  --neutral-fg: #475467;
+  --neutral-bg: #F0F0EC;
+  --neutral-fg: #56554D;
 
   /* Shadows */
   --shadow-xs: 0 1px 1px rgba(15, 23, 42, 0.04);
@@ -85,12 +101,14 @@
   --s-12: 48px;
   --s-16: 64px;
 
-  /* Type */
-  --font-sans: "Geist", "Söhne", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* Type — Harvestly is fully monospace (Inconsolata) for the calm,
+     "structured-data workspace" feel. Geist Mono is the fallback. */
+  --font-sans: "Inconsolata", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-mono: "Inconsolata", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Layout */
-  --sidebar-w: 244px;
+  --sidebar-w: 232px;
+  --sidebar-collapsed-w: 76px;
   --header-h: 60px;
 
   /* Legacy aliases used elsewhere in the codebase */
@@ -117,7 +135,7 @@ body {
   background: var(--bg-app);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.005em;
 }
 
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -134,18 +152,44 @@ a { color: inherit; text-decoration: none; }
   width: 100vw;
   overflow: hidden;
   background: var(--bg-app);
+  transition: grid-template-columns 180ms ease;
+}
+
+.app-sidebar-collapsed {
+  grid-template-columns: var(--sidebar-collapsed-w) 1fr;
 }
 
 /* ============ Sidebar ============ */
 .sidebar {
-  background: var(--surface);
+  background: var(--surface-sidebar);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 14px 12px 12px;
+  padding: 26px 20px 18px;
   position: relative;
   min-height: 0;
   overflow-y: auto;
+}
+
+.sidebar-toggle {
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  box-shadow: var(--shadow-xs);
+}
+
+.sidebar-toggle:hover {
+  background: var(--surface-sunken);
+  color: var(--text-primary);
 }
 .sidebar .brand {
   display: flex;
@@ -163,8 +207,36 @@ a { color: inherit; text-decoration: none; }
 }
 .sidebar .brand-name {
   font-weight: 600;
-  letter-spacing: -0.01em;
-  font-size: 14.5px;
+  letter-spacing: 0.04em;
+  font-size: 20px;
+}
+.brand-wordmark {
+  display: block;
+  width: min(158px, 100%);
+  height: auto;
+  object-fit: contain;
+}
+.brand-iconmark {
+  display: none;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+.sidebar .brand-tagline {
+  max-width: 120px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+.sidebar .harvest-brand {
+  margin-bottom: 22px;
+}
+.auth-brand-wordmark {
+  display: block;
+  width: 178px;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 .sidebar .ws-switcher {
   margin: 4px 4px 14px;
@@ -192,7 +264,7 @@ a { color: inherit; text-decoration: none; }
 .ws-switcher .ws-name { font-size: 12.5px; font-weight: 600; line-height: 1.2; }
 .ws-switcher .ws-plan { font-size: 11px; color: var(--text-muted); }
 
-.nav-section { margin: 4px 0; display: flex; flex-direction: column; }
+.nav-section { margin: 4px 0; display: flex; flex-direction: column; gap: 12px; }
 .nav-label {
   text-transform: uppercase;
   font-size: 10.5px;
@@ -203,12 +275,12 @@ a { color: inherit; text-decoration: none; }
 }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 7px 10px;
-  border-radius: 7px;
+  padding: 12px 10px;
+  border-radius: 8px;
   font-size: 13px;
   color: var(--text-secondary);
   cursor: pointer;
-  margin: 1px 0;
+  margin: 0;
   transition: background .12s, color .12s;
   position: relative;
   border: 0;
@@ -220,9 +292,10 @@ a { color: inherit; text-decoration: none; }
 .nav-item:hover { background: var(--surface-sunken); color: var(--text-primary); }
 .nav-item .nav-icon { width: 16px; height: 16px; flex: 0 0 16px; color: currentColor; opacity: 0.85; }
 .nav-item.active {
-  background: var(--accent-soft);
+  background: var(--surface-sunken);
   color: var(--accent-deep);
   font-weight: 550;
+  box-shadow: inset 0 0 0 1px var(--border-soft);
 }
 .nav-item.active .nav-icon { opacity: 1; }
 .nav-item .badge-count {
@@ -236,12 +309,67 @@ a { color: inherit; text-decoration: none; }
 }
 .nav-item.active .badge-count { background: white; color: var(--accent-deep); }
 
+.app-sidebar-collapsed .sidebar {
+  padding: 54px 14px 16px;
+  overflow-x: hidden;
+}
+
+.app-sidebar-collapsed .harvest-brand {
+  align-items: center !important;
+  padding: 0 0 18px !important;
+  margin-bottom: 12px;
+}
+
+.app-sidebar-collapsed .brand-wordmark,
+.app-sidebar-collapsed .brand-tagline,
+.app-sidebar-collapsed .nav-text,
+.app-sidebar-collapsed .badge-count,
+.app-sidebar-collapsed .profile-tile .pt-info,
+.app-sidebar-collapsed .profile-tile > svg {
+  display: none;
+}
+
+.app-sidebar-collapsed .brand-iconmark {
+  display: block;
+}
+
+.app-sidebar-collapsed .nav-section {
+  align-items: center;
+  gap: 10px;
+}
+
+.app-sidebar-collapsed .nav-item {
+  width: 40px;
+  height: 40px;
+  justify-content: center;
+  padding: 0;
+}
+
+.app-sidebar-collapsed .nav-item .nav-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.app-sidebar-collapsed .sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-sidebar-collapsed .profile-tile {
+  width: 40px;
+  height: 40px;
+  justify-content: center;
+  padding: 0;
+}
+
 .sidebar .spacer { flex: 1; }
 
 .sidebar-foot {
   border-top: 1px solid var(--divider);
-  padding-top: 10px;
-  margin-top: 6px;
+  padding-top: 16px;
+  margin-top: 12px;
 }
 .profile-tile {
   display: flex; align-items: center; gap: 10px;
@@ -739,6 +867,294 @@ select.input {
 .workflow-chip .arrow { color: var(--text-faint); }
 .workflow-chip .step-p { color: var(--text-primary); font-weight: 550; }
 
+/* ============ Builder workbench ============ */
+.builder-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(106, 90, 69, 0.07), transparent 22%),
+    var(--bg-app);
+}
+
+.builder-topbar {
+  min-height: 96px;
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(420px, 1fr) minmax(280px, 380px);
+  align-items: center;
+  gap: 18px;
+  padding: 18px 28px 12px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.68), rgba(255,255,255,0)),
+    var(--surface-warm);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.builder-recipe-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.builder-recipe-input {
+  min-width: 0;
+  width: 150px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.builder-recipe-input:focus {
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.builder-stepper-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 34px;
+  min-width: 0;
+}
+
+.builder-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.builder-command-wrap {
+  padding: 14px 22px 18px;
+  background: var(--surface-warm);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.builder-command-bar {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 11px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: rgba(255, 254, 251, 0.9);
+  box-shadow: var(--shadow-xs);
+}
+
+.builder-url-form {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.builder-url-lock {
+  height: 38px;
+  padding: 0 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.builder-url-input {
+  height: 38px;
+  border-radius: 0;
+  border-color: var(--border);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.builder-reload-button {
+  height: 38px;
+  border: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  padding-inline: 12px;
+}
+
+.builder-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.builder-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.builder-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.builder-status-pill-live {
+  color: var(--success-fg);
+}
+
+.builder-mode-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.builder-workbench {
+  background: var(--surface-panel);
+}
+
+.builder-canvas-pane {
+  border-right: 1px solid var(--border);
+}
+
+.builder-inspector-pane {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,254,251,0.94)),
+    var(--surface-panel);
+  box-shadow: inset 1px 0 0 var(--border-soft);
+}
+
+.builder-bottom-panel {
+  border-top: 1px solid var(--border);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0)),
+    var(--surface-footer);
+}
+
+.builder-canvas-loading {
+  position: absolute;
+  inset: 18px;
+  z-index: 20;
+  display: grid;
+  place-items: start center;
+  padding-top: 18px;
+  pointer-events: none;
+}
+
+.builder-loading-card,
+.builder-preview-loading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 460px;
+  padding: 18px 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: rgba(255, 254, 251, 0.94);
+  box-shadow: var(--shadow-pop);
+}
+
+.builder-loading-card {
+  margin: 80px auto;
+}
+
+.builder-loading-card-compact {
+  margin: 0;
+  max-width: 410px;
+  padding: 12px 14px;
+  background: rgba(255, 254, 251, 0.9);
+  backdrop-filter: blur(6px);
+}
+
+.builder-preview-loading {
+  min-height: 210px;
+  justify-content: center;
+  max-width: none;
+  margin: 22px;
+  box-shadow: var(--shadow-xs);
+}
+
+.builder-loading-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.builder-loading-copy {
+  margin-top: 3px;
+  max-width: 300px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.field-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.field-pick-row-focused {
+  background: var(--accent-softer);
+  border-color: var(--border-strong);
+}
+
+.field-pick-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1280px) {
+  .builder-topbar {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .builder-recipe-chip,
+  .builder-actions {
+    justify-content: center;
+  }
+
+  .builder-command-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .builder-status-row,
+  .builder-mode-controls {
+    justify-content: flex-start;
+  }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #D7DAE0; border-radius: 10px; border: 2px solid transparent; background-clip: content-box; }
@@ -747,9 +1163,11 @@ select.input {
 
 /* Subtle dotted background for canvas */
 .canvas-bg {
-  background-color: var(--bg-canvas);
-  background-image: radial-gradient(circle, #D7DAE0 1px, transparent 1px);
-  background-size: 18px 18px;
+  background-color: #EFEEE8;
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0)),
+    radial-gradient(circle, rgba(106,90,69,0.18) 1px, transparent 1px);
+  background-size: auto, 18px 18px;
 }
 
 /* Notification dot pulse */
@@ -766,6 +1184,33 @@ select.input {
   border-radius: 4px;
 }
 @keyframes sk { 0% { background-position: 0% 0; } 100% { background-position: -200% 0; } }
+
+/* =========================================================
+   Harvest motion layer (builder animations)
+   Used by frontend/app/components/animations/* — keep cheap + subtle.
+   ========================================================= */
+
+/* Seed particles scattered once on a preview-success "harvest" moment. */
+@keyframes seed-drift {
+  0%   { transform: translate(0, 0) scale(0.75) rotate(0deg); opacity: 0; }
+  20%  { opacity: 0.6; }
+  100% { transform: translate(var(--seed-x), var(--seed-y)) scale(1) rotate(18deg); opacity: 0; }
+}
+
+.seed-particle {
+  position: absolute;
+  width: 5px;
+  height: 8px;
+  background: currentColor;
+  border-radius: 999px;
+  animation: seed-drift 1200ms ease-in-out forwards;
+}
+
+/* Honour reduced-motion: never run the CSS-keyframe scatter. (Motion components also
+   short-circuit via useReducedMotion, this covers the pure-CSS particle.) */
+@media (prefers-reduced-motion: reduce) {
+  .seed-particle { animation: none; opacity: 0; }
+}
 
 /* Legacy aliases retained for any leftover references */
 .numeric { font-feature-settings: "tnum", "lnum"; }

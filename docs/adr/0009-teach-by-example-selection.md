@@ -329,3 +329,24 @@ authoritative and already exists.
   without selector); `npm test` (37), `typecheck`, `lint` clean.
 - Manual (pending live-stack pass): missed-item add via the mode switch; tick Text+Link on a
   linked title → two fields; table auto-populates on field/selector change.
+
+## Follow-up 3 (2026-06-10) — retire missed-item inference
+
+The add-missed-items interaction added complexity before the core builder flow had settled. The
+user asked to remove it entirely for now. The current builder keeps the no-code first-pick flow:
+click one item, generate the repeated selector, then choose fields. If the pick is wrong, the
+user can return to Item mode and pick a different item; broadening a selector with extra
+positive examples is not available.
+
+Decision:
+
+- Removed frontend state/actions for `containerExampleIds`, `container_example_added`, and
+  `container_selector_inferred`.
+- Removed the frontend `inferSelector` API client and page-level `handleAddItemExample` /
+  reset handlers.
+- Removed the backend `POST /api/page-sessions/{id}/selector/infer` endpoint and the
+  `infer_selector` helper.
+- Removed the stale missed-items backlog bug because the feature it described no longer exists.
+
+Preserved: first-pick selector generation, matched-node outlines, field selection, snapshot
+preview, save, and run behavior.

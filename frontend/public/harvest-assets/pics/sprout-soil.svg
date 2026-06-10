@@ -1,0 +1,8 @@
+<svg width="96" height="72" viewBox="0 0 96 72" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="small sprout growing from soil">
+  <ellipse cx="48" cy="60" rx="24" ry="5" fill="currentColor" opacity="0.18"/>
+  <path d="M48 58 C48 47 48 36 48 24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M48 41 C35 39 31 28 43 26 C47 30 48 36 48 41Z" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 36 C62 33 65 21 53 20 C49 25 48 30 48 36Z" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M23 60 C37 54 60 54 74 60" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path d="M36 62 C43 64 55 64 62 62" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.45"/>
+</svg>

@@ -82,6 +82,18 @@ that's intended, not a bug.
   `render_succeeded` also uses, so manual/auto can't drift. Frontend-only. Manually verified:
   the win shows on single-item pages; no visible change on already-correct list pages (by
   design — it's a corrective escape hatch).
+- **Teach-by-example (ADR 0009) — core kept, broadening retired:** first-pick → generate the
+  repeated selector → choose fields is the live flow. The *missed-item broadening* (clicking
+  extra examples to widen a match; backend `infer_selector` + `POST .../selector/infer`;
+  reducer `container_example_*` actions) was **removed** in ADR 0009 follow-up 3. A wrong pick →
+  return to Item mode and pick a different item. No CSS selector is shown anywhere.
+- **Harvestly redesign (ADR 0011) — DONE:** monochrome ink-on-paper + Inconsolata theme;
+  `HarvestStepper`; the provided art kit in `frontend/public/harvest-assets/` rendered via
+  `HarvestArt` (+ the `HARVEST_ART` registry); builder-first shell (collapsible sidebar,
+  wordmark, no generic header); animated loading/preview states. The builder is now
+  **config-only** — live execution + review live on the **Runs** page (ADR 0011 follow-up 7).
+  Visual/shell only; no extraction/API change. `next build` + tests green; verified against the
+  design reference via a host-dev + Playwright screenshot loop.
 
 ## Next: Phase 3 (continue here next time)
 Shape override (item 1) is done. Remaining, in suggested order:
@@ -95,43 +107,14 @@ the **non-coding primary users**; the tool must stay "magic"/click-and-go. Rever
 **Standing design principle: no CSS/regex/code-shaped inputs in the default builder UI; keep
 technical machinery hidden from non-coders.**
 
-**Teach-by-example selection — DONE (ADR 0009).** The no-code answer to "the auto-pick is
-wrong": the user clicks **another example** and the backend infers the pattern covering all
-examples. Include-only (no exclude). Backend `infer_selector` + `POST .../selector/infer`
-(reuses the existing candidate generators + matcher; a single example == `generate_selector`).
-Reducer tracks `containerExampleIds`/`fieldExampleIds` (+ `*_example_added` /
-`*_selector_inferred` actions). **Items:** after the first pick, clicking more items broadens
-the match (count + outline grow); Item card shows "Found N similar items", a click-to-include
-nudge, examples count, Start over — no selector shown. **Fields:** field-mode overlays span
-all matched cards; clicking the same detail in a *different* card adds an example and
-re-infers that column (same-card click = map a fresh detail); the preview table is the
-feedback surface. Plus a plain-language summary ("Collecting Title, Price from 24 items").
-The CSS selector is no longer displayed anywhere in the builder.
-
-Follow-up round (all DONE, ADR 0009): (1) **missed-items fix** — after the first pick the
-canvas shows clickable node overlays (matched set outlined); the Item card offers "Missed
-some items? Add them" (→ Item mode) + Done; clicking a missed card adds an example (was
-erroring "node not inside item"). (2) **"What to collect" picker** — replaced the
-text/href/src/attribute/html dropdown (dev terms/empty options) with friendly tick options
-showing only values present on the element (Text/Link/Image); tick several to take multiple
-values from one element → multiple fields with `_link`/`_image` suffixes (new `fields_added`
-reducer action). (3) **Live preview** — debounced auto-preview repopulates the results table
-on selector/field changes (cache-fast via ADR 0008), no manual click. List/single detection
-already works (ADR 0005) — no new logic needed.
-
-Second follow-up (all DONE, ADR 0009, same-commit docs): (4) **freeze detected items** — the
-add-missed-items guard now uses `matchedContainerIdOf` (node or ancestor in the match set),
-so clicking a child *inside* a detected card no longer adds a bogus item; detected items are
-frozen (no hover, default cursor). (5) **one-item preview + roomier layout** — during build
-the right panel shows just the first matched item's field→value list (live, cache-fast);
-"Preview records" toggles a compact all-records table in the same panel; screenshot capped
-narrower (1180→760), right panel widened (360→440); the bottom results panel
-(records/changes/logs) renders only after a run.
-
-Automated checks green (typecheck/test/lint + `next build`); **live-stack manual pass still
-not run** (layout proportions + freeze behavior want a real eyeball). Minor cleanup left:
-`fieldAttribute`/`onFieldAttributeChange` props are now dead (attribute UI removed). Possible
-follow-ups (only if asked): exclude/negative examples; per-card confidence strip.
+**Teach-by-example selection (ADR 0009) — current state.** No-code first pick: the user clicks
+one item, the backend generates the repeated selector, and the user ticks which values
+(Text/Link/Image) to collect — friendly tick options showing only values present on the
+element; tick several to take multiple values from one element (`fields_added` reducer
+action). The CSS selector is never shown. The **missed-item broadening** (clicking extra
+examples to widen the match) was **removed** in ADR 0009 follow-up 3: a wrong pick →
+return to Item mode and pick a different item. Don't rebuild broadening without an explicit
+ask. (Possible future, only if asked: exclude/negative examples; per-card confidence strip.)
 
 Parked/external: `docs/backlog/api-connections.md` (untracked) — an "API Connection" data-source
 idea, not created by the builder work; left as-is.

@@ -1,0 +1,14 @@
+<svg width="600" height="180" viewBox="0 0 600 180" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="wide animated seed trail sprite">
+  <path d="M24 126 C102 22 203 156 295 84 C377 18 475 113 574 42" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 10" opacity=".28"/>
+  <circle cx="24" cy="126" r="4" fill="currentColor"/>
+  <circle cx="76" cy="76" r="2.5" fill="#B99A6B"/>
+  <circle cx="131" cy="58" r="3" fill="currentColor"/>
+  <circle cx="187" cy="104" r="2.5" fill="#B99A6B"/>
+  <circle cx="244" cy="124" r="4" fill="currentColor"/>
+  <circle cx="295" cy="84" r="5" fill="currentColor"/>
+  <circle cx="350" cy="42" r="2.5" fill="#B99A6B"/>
+  <circle cx="410" cy="54" r="3.5" fill="currentColor"/>
+  <circle cx="470" cy="92" r="2.5" fill="#B99A6B"/>
+  <circle cx="524" cy="75" r="3" fill="currentColor"/>
+  <circle cx="574" cy="42" r="5" fill="currentColor"/>
+</svg>
