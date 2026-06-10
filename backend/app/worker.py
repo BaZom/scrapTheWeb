@@ -388,7 +388,7 @@ async def _wait_for_dom_stable(
     stable_since: float | None = None
     while time.monotonic() < deadline:
         try:
-            count = await page.evaluate("() => document.querySelectorAll('*').length")
+            count = int(await page.evaluate("() => document.querySelectorAll('*').length"))
         except Exception:
             # Context torn down mid-rebuild: the DOM is in flux, so reset the streak.
             count, stable_since, last_count = -1, None, -1
