@@ -52,10 +52,229 @@ def generate_selector(
         selector = _fallback_path(selected, node_by_id, nodes)
         strategy = "fallback_path"
 
+    matched = _matching_nodes(nodes, selector)
     return {
         "selector": selector,
-        "matchCount": count_matches(nodes, selector),
+        "matchCount": len(matched),
         "strategy": strategy,
+        # The exact nodes this selector matches, so the UI can outline the whole set
+        # instead of approximating it client-side (ADR 0001 Decision 4 → ADR 0007).
+        "matchedNodeIds": [node["nodeId"] for node in matched],
+    }
+
+
+def infer_selector(
+    dom_nodes: list[dict[str, Any]],
+    positive_ids: list[str],
+    mode: SelectorMode,
+    container_selector: str | None = None,
+) -> dict[str, Any]:
+    """Infer a selector that covers several example nodes (teach-by-example, ADR 0009).
+
+    The user clicks more than one example of what they want; we find the selector that
+    matches *all* of them, reusing the same per-node candidate generators and matcher as
+    ``generate_selector`` (no new engine). Include-only: there are no negative examples.
+    With a single id this returns the same selector ``generate_selector`` would.
+
+    Returns the same shape as ``generate_selector`` with ``strategy="inferred"`` (or
+    ``"inferred_fallback"`` when no shared candidate covers every example).
+    """
+    nodes = [_normalize_node(node) for node in dom_nodes if isinstance(node, dict)]
+    node_by_id = {node["nodeId"]: node for node in nodes}
+    positives = [node_by_id[pid] for pid in positive_ids if pid in node_by_id]
+    if not positives:
+        raise ValueError("None of the example nodes were found in the page-session DOM")
+
+    if mode != "container" and container_selector:
+        return _infer_relative_selector(nodes, node_by_id, positives, container_selector)
+
+    positive_id_set = {node["nodeId"] for node in positives}
+    candidates = _candidates_for(positives)
+    scored: list[tuple[tuple[int, int, int, int], str]] = []
+    for selector, strategy in candidates:
+        matched = _matching_nodes(nodes, selector)
+        if not positive_id_set.issubset({node["nodeId"] for node in matched}):
+            continue  # must cover every example the user clicked
+        match_count = len(matched)
+        repeated_bonus = 0 if match_count > 1 else 1
+        overly_broad = 1 if match_count > 100 else 0
+        score = (repeated_bonus, overly_broad, _strategy_rank(strategy), len(selector))
+        scored.append((score, selector))
+
+    if scored:
+        selector = sorted(scored)[0][1]
+        strategy = "inferred"
+    else:
+        selector = _fallback_path(positives[0], node_by_id, nodes)
+        strategy = "inferred_fallback"
+
+    matched = _matching_nodes(nodes, selector)
+    return {
+        "selector": selector,
+        "matchCount": len(matched),
+        "strategy": strategy,
+        "matchedNodeIds": [node["nodeId"] for node in matched],
+    }
+
+
+def preview_from_snapshot(
+    dom_nodes: list[dict[str, Any]],
+    container_selector: str,
+    picks: list[dict[str, str]],
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Fast preview straight from the render snapshot — no S3 fetch, no HTML re-parse.
+
+    The render already captured every element's text/href/src into ``domNodes`` (ADR 0009).
+    For *building and verifying* a recipe against this example page, that snapshot is enough,
+    so we generate each picked field's selector and read its value from the snapshot itself,
+    over every matched item. The *saved run* still extracts from freshly-fetched HTML — that's
+    where full fidelity matters; preview values here are the snapshot's (text capped ~160ch).
+
+    ``picks`` is ``[{nodeId, extract, name}]``. Returns ``{rows, fields}`` — the extracted rows
+    plus the generated ``{name, selector, extract}`` fields (so the caller can save them).
+    Single-record pages (no real container) match each field page-wide for one row.
+    """
+    nodes = [_normalize_node(node) for node in dom_nodes if isinstance(node, dict)]
+    node_by_id = {node["nodeId"]: node for node in nodes}
+    is_single = not container_selector or container_selector == "body"
+
+    fields: list[dict[str, str]] = []
+    for pick in picks:
+        node_id = pick.get("nodeId", "")
+        if node_id not in node_by_id:
+            continue
+        try:
+            generated = (
+                generate_selector(dom_nodes, node_id, "node")
+                if is_single
+                else generate_selector(dom_nodes, node_id, "node", container_selector)
+            )
+        except ValueError:
+            continue  # the picked node isn't inside the container — skip it
+        fields.append(
+            {"name": pick["name"], "selector": generated["selector"], "extract": pick["extract"]}
+        )
+
+    rows: list[dict[str, str]] = []
+    if is_single:
+        if fields:
+            rows = [
+                {
+                    field["name"]: _snapshot_value(
+                        next(iter(_matching_nodes(nodes, field["selector"])), None),
+                        field["extract"],
+                    )
+                    for field in fields
+                }
+            ]
+    else:
+        for container in _matching_nodes(nodes, container_selector)[:limit]:
+            rows.append(
+                {
+                    field["name"]: _snapshot_value(
+                        next(
+                            iter(_matching_descendants(container, nodes, field["selector"])),
+                            None,
+                        ),
+                        field["extract"],
+                    )
+                    for field in fields
+                }
+            )
+    return {"rows": rows, "fields": fields}
+
+
+def _snapshot_value(node: dict[str, Any] | None, extract: str) -> str:
+    if node is None:
+        return ""
+    if extract == "href":
+        return str(node["attrs"].get("href", ""))
+    if extract == "src":
+        return str(node["attrs"].get("src", ""))
+    return str(node.get("text", ""))  # text / html (the snapshot only carries text)
+
+
+def _candidates_for(positives: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    # Union the per-node candidates across every example, de-duped (first strategy wins).
+    seen: set[str] = set()
+    candidates: list[tuple[str, str]] = []
+    for node in positives:
+        for selector, strategy in (
+            _stable_attribute_candidates(node) + _class_candidates(node) + _tag_candidate(node)
+        ):
+            if selector not in seen:
+                seen.add(selector)
+                candidates.append((selector, strategy))
+    return candidates
+
+
+def _infer_relative_selector(
+    nodes: list[dict[str, Any]],
+    node_by_id: dict[str, dict[str, Any]],
+    positives: list[dict[str, Any]],
+    container_selector: str,
+) -> dict[str, Any]:
+    container_nodes = _matching_nodes(nodes, container_selector)
+    container_ids = {node["nodeId"] for node in container_nodes}
+    # Pair each example with its container; drop any example outside the container set.
+    paired = [
+        (node, container)
+        for node in positives
+        if (container := _nearest_ancestor_in(node, node_by_id, container_ids)) is not None
+    ]
+    if not paired:
+        raise ValueError("No example node is inside the selected container")
+
+    candidates = _candidates_for([node for node, _ in paired])
+    candidates.extend(
+        candidate
+        for node, container in paired
+        for candidate in _relative_path_candidates(node, container, node_by_id, nodes)
+    )
+
+    # Each container's descendants, computed once and reused across all candidates.
+    descendants = _descendants_by_container(container_ids, nodes, node_by_id)
+
+    scored: list[tuple[tuple[int, int, int], str]] = []
+    seen: set[str] = set()
+    for selector, strategy in candidates:
+        if selector in seen:
+            continue
+        seen.add(selector)
+        matched_by_container = {
+            cid: {node["nodeId"] for node in _select_within(descs, selector, node_by_id)}
+            for cid, descs in descendants.items()
+        }
+        # Every example cell must be matched within its own container.
+        covers_all = all(
+            node["nodeId"] in matched_by_container.get(container["nodeId"], set())
+            for node, container in paired
+        )
+        if not covers_all:
+            continue
+        per_container_counts = [len(ids) for ids in matched_by_container.values()]
+        exact_bonus = 0 if all(count == 1 for count in per_container_counts) else 1
+        scored.append(((exact_bonus, _strategy_rank(strategy), len(selector)), selector))
+
+    if scored:
+        selector = sorted(scored)[0][1]
+        strategy = "inferred"
+    else:
+        first_node, first_container = paired[0]
+        selector = _relative_path_candidates(first_node, first_container, node_by_id, nodes)[-1][0]
+        strategy = "inferred_fallback"
+
+    matched_ids = [
+        node["nodeId"]
+        for container in container_nodes
+        for node in _select_within(descendants[container["nodeId"]], selector, node_by_id)
+    ]
+    return {
+        "selector": selector,
+        "matchCount": len(matched_ids),
+        "strategy": strategy,
+        "matchedNodeIds": matched_ids,
     }
 
 
@@ -76,14 +295,20 @@ def _generate_relative_selector(
     candidates.extend(_tag_candidate(selected))
     candidates.extend(_relative_path_candidates(selected, selected_container, node_by_id, nodes))
 
+    # Each container's descendants, computed once and reused for every candidate (avoids the
+    # O(candidates × containers × nodes) re-derivation that made this slow).
+    descendants = _descendants_by_container(container_ids, nodes, node_by_id)
+    selected_descendants = descendants[selected_container["nodeId"]]
+
     scored: list[tuple[tuple[int, int, int], str, str, int]] = []
     for selector, strategy in candidates:
         per_container_counts = [
-            len(_matching_descendants(container, nodes, selector)) for container in container_nodes
+            len(_select_within(descendants[container["nodeId"]], selector, node_by_id))
+            for container in container_nodes
         ]
         if not per_container_counts or per_container_counts[0] < 1:
             continue
-        selected_matches = _matching_descendants(selected_container, nodes, selector)
+        selected_matches = _select_within(selected_descendants, selector, node_by_id)
         if selected["nodeId"] not in {node["nodeId"] for node in selected_matches}:
             continue
         exact_bonus = 0 if all(count == 1 for count in per_container_counts) else 1
@@ -96,9 +321,21 @@ def _generate_relative_selector(
     else:
         selector = _relative_path_candidates(selected, selected_container, node_by_id, nodes)[-1][0]
         strategy = "relative_fallback_path"
-        match_count = len(_matching_descendants(selected_container, nodes, selector))
+        match_count = len(_select_within(selected_descendants, selector, node_by_id))
 
-    return {"selector": selector, "matchCount": match_count, "strategy": strategy}
+    # The relative selector matches one cell per container; surface every match across
+    # all containers so the UI can outline the full extracted column (ADR 0007).
+    matched_ids = [
+        node["nodeId"]
+        for container in container_nodes
+        for node in _select_within(descendants[container["nodeId"]], selector, node_by_id)
+    ]
+    return {
+        "selector": selector,
+        "matchCount": match_count,
+        "strategy": strategy,
+        "matchedNodeIds": matched_ids,
+    }
 
 
 def count_matches(dom_nodes: list[dict[str, Any]], selector: str) -> int:
@@ -115,21 +352,56 @@ def _matching_nodes(dom_nodes: list[dict[str, Any]], selector: str) -> list[dict
 
 
 def _matching_descendants(
-    container: dict[str, Any], nodes: list[dict[str, Any]], selector: str
+    container: dict[str, Any],
+    nodes: list[dict[str, Any]],
+    selector: str,
+    node_by_id: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    # Build the id map once (was rebuilt per node inside _is_descendant — O(nodes²)); callers
+    # in a hot loop can pass a shared one to skip even this.
+    ids = node_by_id if node_by_id is not None else {node["nodeId"]: node for node in nodes}
     descendant_nodes = [
         node
         for node in nodes
-        if node["nodeId"] != container["nodeId"]
-        and _is_descendant(node, container, nodes)
+        if node["nodeId"] != container["nodeId"] and _is_descendant(node, container, ids)
     ]
     return _matching_nodes(descendant_nodes, selector)
 
 
+def _descendants_by_container(
+    container_ids: set[str],
+    nodes: list[dict[str, Any]],
+    node_by_id: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    # Group every node under each of its container ancestors in ONE pass (O(nodes·depth)),
+    # so the relative-selector scoring doesn't re-derive descendants per candidate.
+    result: dict[str, list[dict[str, Any]]] = {cid: [] for cid in container_ids}
+    for node in nodes:
+        parent_id = node.get("parentNodeId")
+        current = node_by_id.get(parent_id) if isinstance(parent_id, str) else None
+        while current is not None:
+            if current["nodeId"] in container_ids:
+                result[current["nodeId"]].append(node)
+            parent_id = current.get("parentNodeId")
+            current = node_by_id.get(parent_id) if isinstance(parent_id, str) else None
+    return result
+
+
+def _select_within(
+    subset: list[dict[str, Any]], selector: str, node_by_id: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    # Match a selector against an already-normalized node subset (parse once, no re-normalize).
+    segments = [_parse_segment(part.strip()) for part in selector.split(">")]
+    if not segments:
+        return []
+    return [node for node in subset if _matches_selector_chain(node, segments, node_by_id)]
+
+
 def _is_descendant(
-    node: dict[str, Any], ancestor: dict[str, Any], nodes: list[dict[str, Any]]
+    node: dict[str, Any],
+    ancestor: dict[str, Any],
+    node_by_id: dict[str, dict[str, Any]],
 ) -> bool:
-    node_by_id = {candidate["nodeId"]: candidate for candidate in nodes}
     current = node
     while isinstance(current.get("parentNodeId"), str):
         parent = node_by_id.get(current["parentNodeId"])
