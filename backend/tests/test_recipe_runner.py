@@ -55,7 +55,13 @@ def test_single_page_extracts_absolute_field_selectors() -> None:
     rows = extract_preview_rows(
         SAMPLE_HTML,
         "body",
-        [{"name": "title", "selector": "html > body > section > article:nth-of-type(1) > h3 > a", "extract": "text"}],
+        [
+            {
+                "name": "title",
+                "selector": "html > body > section > article:nth-of-type(1) > h3 > a",
+                "extract": "text",
+            }
+        ],
         page_type="single",
     )
     assert rows == [{"title": "Title 1"}]
