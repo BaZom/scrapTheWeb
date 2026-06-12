@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { SentryInit } from "./sentry-init";
 
 export const metadata: Metadata = {
-  title: "Harvestly",
+  title: "Skrowt",
   description: "Turn websites into structured data — records, alerts, and exports."
 };
 

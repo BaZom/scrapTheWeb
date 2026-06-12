@@ -1,4 +1,4 @@
-// Reusable builder animation layer (Harvestly motion direction). All components are client
+// Reusable builder animation layer (Skrowt harvest motion direction). All components are client
 // components that respect prefers-reduced-motion and hold only visual/animation state — no
 // product state lives here. Safe to tune or remove without touching extraction logic.
 export { AnimatedFieldRow } from "./AnimatedFieldRow";

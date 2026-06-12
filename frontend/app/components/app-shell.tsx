@@ -72,18 +72,18 @@ export function AppShell({
         <button type="button" className="brand harvest-brand" onClick={() => onViewChange("builder")} style={sidebarBrandStyle}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/harvest-assets/pics/harvestly-wordmark.png"
-            width={158}
-            height={55}
-            alt="Harvestly"
+            src="/harvest-assets/pics/skrowt-wordmark.png"
+            width={166}
+            height={53}
+            alt="Skrowt"
             className="brand-wordmark"
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/harvest-assets/pics/sprout-logo.svg"
+            src="/harvest-assets/pics/skrowt-icon.png"
             width={28}
-            height={28}
-            alt="Harvestly"
+            height={40}
+            alt="Skrowt"
             className="brand-iconmark"
           />
           <span className="brand-tagline">turn websites into structured data</span>

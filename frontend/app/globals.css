@@ -8,7 +8,7 @@
    ========================================================= */
 
 :root {
-  /* ---- Harvestly mood: monochrome ink-on-paper (ADR 0011) ---------------
+  /* ---- Skrowt harvest mood: monochrome ink-on-paper (ADR 0011) ----------
      The palette is deliberately black-and-white with thin, quiet borders.
      The ONLY chromatic note is a single muted "sprout" green (+soil brown)
      reserved for harvest/seed motifs and success — never UI chrome. */
@@ -38,7 +38,7 @@
   --text-onAccent: #FFFFFF;
 
   /* Accent — monochrome ink (was teal). Selected borders / primary buttons
-     / focus all read as near-black, matching the Harvestly inspiration. */
+     / focus all read as near-black, matching the Skrowt inspiration. */
   --accent: #1A1913;
   --accent-strong: #000000;
   --accent-deep: #000000;
@@ -101,7 +101,7 @@
   --s-12: 48px;
   --s-16: 64px;
 
-  /* Type — Harvestly is fully monospace (Inconsolata) for the calm,
+  /* Type — Skrowt is fully monospace (Inconsolata) for the calm,
      "structured-data workspace" feel. Geist Mono is the fallback. */
   --font-sans: "Inconsolata", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --font-mono: "Inconsolata", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -122,6 +122,68 @@
   --rule-soft: var(--border-soft);
   --rule-strong: var(--border-strong);
   color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-app: #151511;
+  --bg-canvas: #1B1B16;
+  --surface: #1E1D18;
+  --surface-soft: #24231E;
+  --surface-sunken: #2B2923;
+  --surface-warm: #23211C;
+  --surface-panel: #201F1A;
+  --surface-sidebar: #24231F;
+  --surface-footer: #24231F;
+
+  --border: #3B3930;
+  --border-strong: #565246;
+  --border-soft: #302E27;
+  --divider: #343229;
+
+  --text-primary: #F4F1E8;
+  --text-secondary: #CCC7B9;
+  --text-muted: #9A9486;
+  --text-faint: #706A5F;
+  --text-onAccent: #10100D;
+
+  --accent: #F4F1E8;
+  --accent-strong: #FFFFFF;
+  --accent-deep: #FFFFFF;
+  --accent-soft: #353229;
+  --accent-softer: #292720;
+  --accent-ring: rgba(244, 241, 232, 0.24);
+
+  --sprout: #8CAF7B;
+  --sprout-soft: #253021;
+  --soil: #BDAF90;
+
+  --success: #8CAF7B;
+  --success-bg: #253021;
+  --success-fg: #BFD6B2;
+
+  --warning: #D99C3C;
+  --warning-bg: #382714;
+  --warning-fg: #F0C37A;
+
+  --danger: #EF7A82;
+  --danger-bg: #3B1D21;
+  --danger-fg: #FFB8BE;
+
+  --info: #CCC7B9;
+  --info-bg: #2D2A23;
+  --info-fg: #E6E0D2;
+
+  --neutral-bg: #2A2923;
+  --neutral-fg: #CCC7B9;
+
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.28);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32), 0 1px 1px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 10px 24px -12px rgba(0, 0, 0, 0.48), 0 2px 6px rgba(0, 0, 0, 0.24);
+  --shadow-lg: 0 18px 44px -18px rgba(0, 0, 0, 0.58), 0 8px 18px -10px rgba(0, 0, 0, 0.42);
+  --shadow-pop: 0 22px 60px -18px rgba(0, 0, 0, 0.68), 0 8px 22px -10px rgba(0, 0, 0, 0.5);
+  --shadow-inner: inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
 * { box-sizing: border-box; }
@@ -212,14 +274,14 @@ a { color: inherit; text-decoration: none; }
 }
 .brand-wordmark {
   display: block;
-  width: min(158px, 100%);
+  width: min(166px, 100%);
   height: auto;
   object-fit: contain;
 }
 .brand-iconmark {
   display: none;
   width: 28px;
-  height: 28px;
+  height: 40px;
   object-fit: contain;
 }
 .sidebar .brand-tagline {
@@ -233,7 +295,7 @@ a { color: inherit; text-decoration: none; }
 }
 .auth-brand-wordmark {
   display: block;
-  width: 178px;
+  width: 188px;
   max-width: 100%;
   height: auto;
   object-fit: contain;
@@ -307,7 +369,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--surface-sunken);
   color: var(--text-secondary);
 }
-.nav-item.active .badge-count { background: white; color: var(--accent-deep); }
+.nav-item.active .badge-count { background: var(--surface); color: var(--accent-deep); }
 
 .app-sidebar-collapsed .sidebar {
   padding: 54px 14px 16px;
@@ -426,7 +488,7 @@ a { color: inherit; text-decoration: none; }
 .search-box:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-ring);
-  background: white;
+  background: var(--surface);
 }
 .search-box input {
   border: 0;
@@ -441,7 +503,7 @@ a { color: inherit; text-decoration: none; }
 .search-box .kbd {
   font-family: var(--font-mono);
   font-size: 10.5px;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 5px;
@@ -512,7 +574,7 @@ a { color: inherit; text-decoration: none; }
 .btn-lg { height: 38px; padding: 0 16px; font-size: 14px; border-radius: 8px; }
 .btn-primary {
   background: var(--accent);
-  color: white;
+  color: var(--text-onAccent);
   border-color: var(--accent-strong);
   box-shadow: 0 1px 0 rgba(255,255,255,0.16) inset, 0 1px 2px rgba(15,23,42,.18);
 }
@@ -563,7 +625,7 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
 }
 .segmented button.on {
-  background: white;
+  background: var(--surface);
   color: var(--text-primary);
   box-shadow: 0 1px 2px rgba(15,23,42,.06), 0 0 0 1px var(--border);
 }
@@ -818,7 +880,7 @@ select.input {
 }
 .step.done .step-num { background: var(--success-bg); color: var(--success-fg); border-color: transparent; }
 .step.done { color: var(--text-secondary); }
-.step.active .step-num { background: var(--accent); color: white; border-color: transparent; box-shadow: 0 0 0 3px var(--accent-ring); }
+.step.active .step-num { background: var(--accent); color: var(--text-onAccent); border-color: transparent; box-shadow: 0 0 0 3px var(--accent-ring); }
 .step.active { color: var(--text-primary); }
 .step.step-icon-only { padding: 6px 4px; }
 .step-line {

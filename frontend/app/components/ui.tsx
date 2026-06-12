@@ -347,7 +347,7 @@ export function Sparkline({
 }
 
 // ---------------- Avatar ----------------
-// Harvestly is monochrome — user avatars rotate through inky neutrals (+ one soil/sprout tint).
+// Skrowt is monochrome — user avatars rotate through inky neutrals (+ one soil/sprout tint).
 const AVATAR_PALETTE = ["#1A1913", "#3A3933", "#56554D", "#6A5A45", "#4F7A43", "#2E2D27", "#46453E"];
 
 export function Avatar({

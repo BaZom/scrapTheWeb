@@ -34,6 +34,15 @@ type WorkspaceDataProps = {
   runs: ExtractionRun[];
 };
 
+export type AppearanceMode = "light" | "dark";
+
+export type AppearanceSettings = {
+  mode: AppearanceMode;
+  accentColor: string;
+  sproutColor: string;
+  paperColor: string;
+};
+
 // ---------- shared real-data helpers ----------
 function shortId(id: string) {
   return id.slice(0, 8);
@@ -540,7 +549,7 @@ function RunChangeRow({ event, kind }: { event: RunChangeEvent; kind: RunChangeK
         padding: "9px 10px",
         border: "1px solid var(--border)",
         borderRadius: 8,
-        background: "white",
+        background: "var(--surface)",
         minWidth: 0
       }}
     >
@@ -612,7 +621,7 @@ function WorkflowDiagram() {
               gap: 6,
               padding: "4px 8px 4px 6px",
               borderRadius: 999,
-              background: "white",
+              background: "var(--surface)",
               border: "1px solid var(--border)",
               fontSize: 11.5,
               fontWeight: 550,
@@ -925,7 +934,7 @@ export function MonitorsView({
           <div style={{ position: "relative", padding: 8 }}>
             <div
               style={{
-                background: "white",
+                background: "var(--surface)",
                 borderRadius: 12,
                 border: "1px solid var(--border)",
                 boxShadow: "var(--shadow-lg)",
@@ -1091,6 +1100,310 @@ export function MonitorDetailView() {
       <h3>No monitor selected</h3>
       <p>Select a scheduled monitor once monitor persistence ships.</p>
     </div>
+  );
+}
+
+function RunReviewPanel({
+  exportBusy,
+  onDownloadExport,
+  recipes,
+  run,
+  title = "Run results"
+}: {
+  exportBusy: "csv" | "json" | null;
+  onDownloadExport: (runId: string, format: "csv" | "json") => void;
+  recipes: Recipe[];
+  run: ExtractionRun;
+  title?: string;
+}) {
+  const group = statusGroup(run.status);
+  const host = domainForUrl(run.url);
+  const canExport = group === "completed";
+  return (
+    <Card style={{ marginBottom: 18 }}>
+      <CardHeader
+        title={title}
+        sub={`${recipeNameFor(run, recipes)} · ${host} · run ${shortId(run.id)}`}
+        action={
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <StatusBadge status={run.status} />
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="csv"
+              disabled={!canExport || exportBusy === "csv"}
+              onClick={() => onDownloadExport(run.id, "csv")}
+            >
+              CSV
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="json"
+              disabled={!canExport || exportBusy === "json"}
+              onClick={() => onDownloadExport(run.id, "json")}
+            >
+              JSON
+            </Button>
+          </div>
+        }
+      />
+      <div style={{ padding: "0 18px 18px", display: "grid", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+          <KPI icon="records" label="Real records" value={group === "completed" ? fmtInt(run.records.length) : "—"} />
+          <KPI icon="diff" label="Changes" value={group === "completed" ? fmtInt(runChangeCount(run)) : "—"} />
+          <KPI icon="clock" label="Duration" value={durationFromIso(run.startedAt, run.finishedAt)} />
+          <KPI icon="calendar" label="Started" value={relativeFromIso(run.startedAt)} />
+        </div>
+
+        {run.errorMessage ? (
+          <div
+            role="status"
+            style={{
+              border: "1px solid var(--danger)",
+              background: "var(--danger-bg)",
+              color: "var(--danger-fg)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 12.5
+            }}
+          >
+            {run.errorMessage}
+          </div>
+        ) : null}
+
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(300px, 0.65fr)", gap: 16 }}>
+          <div className="table-wrap" style={{ minWidth: 0 }}>
+            <div style={{ padding: "12px 14px 8px", display: "flex", alignItems: "center", gap: 8 }}>
+              <Icon name="records" size={14} style={{ color: "var(--accent-deep)" }} />
+              <div style={{ fontSize: 13, fontWeight: 650 }}>Real data</div>
+              <div className="grow" />
+              <Badge tone="outline">{Math.min(run.records.length, 25)} shown</Badge>
+            </div>
+            {run.records.length > 0 ? (
+              <RecordsTable records={run.records.slice(0, 25)} />
+            ) : (
+              <EmptyState
+                icon="records"
+                title={group === "completed" ? "No records extracted" : "Run is working"}
+                description={
+                  group === "completed"
+                    ? "This completed run did not return any records."
+                    : "Records will appear here while the run progresses."
+                }
+              />
+            )}
+          </div>
+          <div
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              background: "var(--surface-soft)",
+              minWidth: 0,
+              overflow: "hidden"
+            }}
+          >
+            <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+              <Icon name="diff" size={14} style={{ color: "var(--accent-deep)" }} />
+              <div style={{ fontSize: 13, fontWeight: 650 }}>Changes review</div>
+            </div>
+            <RunChangesReview run={run} />
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ======================================================================
+// RUN TEST
+// ======================================================================
+export function RunTestView({
+  error,
+  exportBusy,
+  loading,
+  onDownloadExport,
+  onOpenBuilder,
+  onOpenRun,
+  onRunRecipe,
+  onSelectRecipe,
+  recipes,
+  runBusyRecipeId,
+  runs,
+  selectedRecipeId,
+  selectedRunId
+}: WorkspaceDataProps & {
+  exportBusy: "csv" | "json" | null;
+  onDownloadExport: (runId: string, format: "csv" | "json") => void;
+  onOpenBuilder: () => void;
+  onOpenRun: (run: ExtractionRun) => void;
+  onRunRecipe: (recipeId: string) => void;
+  onSelectRecipe: (recipeId: string | null) => void;
+  runBusyRecipeId: string | null;
+  selectedRecipeId: string | null;
+  selectedRunId: string | null;
+}) {
+  const sortedRecipes = [...recipes].sort((a, b) => a.name.localeCompare(b.name));
+  const selectedRecipe =
+    (selectedRecipeId ? sortedRecipes.find((recipe) => recipe.id === selectedRecipeId) : null) ??
+    sortedRecipes[0] ??
+    null;
+  const recipeRuns = [...runs]
+    .filter((run) => !selectedRecipe || run.recipeId === selectedRecipe.id)
+    .sort((a, b) => new Date(b.startedAt ?? 0).getTime() - new Date(a.startedAt ?? 0).getTime());
+  const selectedRun =
+    (selectedRunId ? recipeRuns.find((run) => run.id === selectedRunId) : null) ??
+    recipeRuns[0] ??
+    null;
+  const selectedHost = selectedRecipe ? domainForUrl(selectedRecipe.url) : "";
+  const running = selectedRecipe ? runBusyRecipeId === selectedRecipe.id : false;
+
+  return (
+    <>
+      <WorkspaceNotice error={error} loading={loading} />
+      <div className="page-hero">
+        <div>
+          <h2>Run Test</h2>
+          <div className="sub">Fetch live data, inspect records, review changes, and export the result.</div>
+        </div>
+        <Button variant="secondary" icon="wand" onClick={onOpenBuilder}>
+          Open Builder
+        </Button>
+      </div>
+
+      {selectedRecipe ? (
+        <>
+          <Card style={{ marginBottom: 18 }}>
+            <CardHeader title="Recipe to test" sub={`${selectedHost} · ${selectedRecipe.pageType}`} />
+            <div style={{ padding: "0 18px 18px", display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) auto", gap: 12, alignItems: "end" }}>
+                <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
+                  Recipe
+                  <select
+                    value={selectedRecipe.id}
+                    onChange={(event) => onSelectRecipe(event.target.value)}
+                    style={{
+                      height: 38,
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
+                      padding: "0 10px",
+                      color: "var(--text-primary)"
+                    }}
+                  >
+                    {sortedRecipes.map((recipe) => (
+                      <option key={recipe.id} value={recipe.id}>
+                        {recipe.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  variant="primary"
+                  icon="play"
+                  disabled={running}
+                  onClick={() => onRunRecipe(selectedRecipe.id)}
+                >
+                  {running ? "Starting…" : "Run test"}
+                </Button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+                <KPI icon="recipe" label="Fields" value={fmtInt(recipeFieldCount(selectedRecipe))} />
+                <KPI icon="globe" label="Source" value={selectedHost} />
+                <KPI icon="runs" label="Tests" value={fmtInt(recipeRuns.length)} />
+                <KPI icon="records" label="Latest records" value={selectedRun ? fmtInt(selectedRun.records.length) : "—"} />
+              </div>
+            </div>
+          </Card>
+
+          {selectedRun ? (
+            <RunReviewPanel
+              exportBusy={exportBusy}
+              onDownloadExport={onDownloadExport}
+              recipes={recipes}
+              run={selectedRun}
+            />
+          ) : (
+            <Card style={{ marginBottom: 18 }}>
+              <EmptyState
+                icon="runs"
+                title="No test run yet"
+                description="Run this recipe once to fetch live data."
+              />
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader title="Recent tests" sub={selectedRecipe.name} />
+            {recipeRuns.length === 0 ? (
+              <EmptyState icon="runs" title="No history yet" description="Completed and failed tests will appear here." />
+            ) : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Started</th>
+                    <th className="num">Duration</th>
+                    <th className="num">Records</th>
+                    <th className="num">Changes</th>
+                    <th>Status</th>
+                    <th style={{ width: 60, textAlign: "right" }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recipeRuns.map((run) => {
+                    const group = statusGroup(run.status);
+                    return (
+                      <tr
+                        key={run.id}
+                        style={selectedRun?.id === run.id ? { background: "var(--surface-soft)" } : undefined}
+                      >
+                        <td className="mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                          {shortId(run.id)}
+                        </td>
+                        <td className="muted">{relativeFromIso(run.startedAt)}</td>
+                        <td className="num tabular">{durationFromIso(run.startedAt, run.finishedAt)}</td>
+                        <td className="num tabular">{group === "completed" ? fmtInt(run.records.length) : "—"}</td>
+                        <td className="num tabular">{group === "completed" ? runChangeCount(run) : "—"}</td>
+                        <td>
+                          <StatusBadge status={run.status} />
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              style={{ width: 28, height: 28 }}
+                              onClick={() => onOpenRun(run)}
+                              title="Review run"
+                            >
+                              <Icon name="chevronRight" size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </Card>
+        </>
+      ) : (
+        <Card>
+          <EmptyState
+            icon="recipe"
+            title="No recipes yet"
+            description="Save a recipe in the Builder before running a live test."
+            action={
+              <Button variant="primary" icon="wand" onClick={onOpenBuilder}>
+                Open Builder
+              </Button>
+            }
+          />
+        </Card>
+      )}
+    </>
   );
 }
 
@@ -1437,7 +1750,7 @@ export function ExportsView({
               width: 32,
               height: 32,
               borderRadius: 8,
-              background: "white",
+              background: "var(--surface)",
               border: "1px solid var(--border)",
               display: "grid",
               placeItems: "center",
@@ -1451,7 +1764,7 @@ export function ExportsView({
               Exports are generated from completed runs
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              Failed or queued runs don&apos;t appear here. To export from a draft recipe, run it once from the Builder.
+              Failed or queued runs don&apos;t appear here. To export from a saved recipe, run it once from Run Test.
             </div>
           </div>
         </div>
@@ -1567,6 +1880,7 @@ export function ExportsView({
 // ======================================================================
 type SettingsTab =
   | "workspace"
+  | "appearance"
   | "members"
   | "notifications"
   | "integrations"
@@ -1575,13 +1889,19 @@ type SettingsTab =
   | "billing";
 
 export function SettingsView({
+  appearance,
   dashboard,
   accessToken,
+  onAppearanceChange,
+  onAppearanceReset,
   onVerified,
   onSessionRevoked
 }: {
+  appearance: AppearanceSettings;
   dashboard: Dashboard | null;
   accessToken: string | null;
+  onAppearanceChange: (settings: AppearanceSettings) => void;
+  onAppearanceReset: () => void;
   onVerified: () => void;
   onSessionRevoked: () => void;
 }) {
@@ -1600,6 +1920,7 @@ export function SettingsView({
         onChange={setTab}
         tabs={[
           { value: "workspace", label: "Workspace" },
+          { value: "appearance", label: "Appearance" },
           { value: "members", label: "Members", count: 1 },
           { value: "notifications", label: "Notifications" },
           { value: "integrations", label: "Integrations" },
@@ -1611,6 +1932,13 @@ export function SettingsView({
 
       <div style={{ marginTop: 24 }}>
         {tab === "workspace" && <SettingsWorkspace dashboard={dashboard} />}
+        {tab === "appearance" && (
+          <SettingsAppearance
+            appearance={appearance}
+            onAppearanceChange={onAppearanceChange}
+            onAppearanceReset={onAppearanceReset}
+          />
+        )}
         {tab === "members" && <SettingsMembers dashboard={dashboard} />}
         {tab === "notifications" && <SettingsNotifications />}
         {tab === "integrations" && <SettingsIntegrations />}
@@ -1686,6 +2014,152 @@ function SettingsWorkspace({ dashboard }: { dashboard: Dashboard | null }) {
         </Badge>
       </SettingsRow>
     </Card>
+  );
+}
+
+const LIGHT_ACCENT = "#1A1913";
+const DARK_ACCENT = "#F4F1E8";
+const LIGHT_SPROUT = "#4F7A43";
+const DARK_SPROUT = "#8CAF7B";
+const LIGHT_PAPER = "#F6F5EF";
+const DARK_PAPER = "#24231F";
+
+function SettingsAppearance({
+  appearance,
+  onAppearanceChange,
+  onAppearanceReset
+}: {
+  appearance: AppearanceSettings;
+  onAppearanceChange: (settings: AppearanceSettings) => void;
+  onAppearanceReset: () => void;
+}) {
+  const update = (patch: Partial<AppearanceSettings>) =>
+    onAppearanceChange({ ...appearance, ...patch });
+  const setMode = (mode: AppearanceMode) => {
+    const switchingToDark = mode === "dark";
+    const currentAccent = appearance.accentColor.toLowerCase();
+    const currentSprout = appearance.sproutColor.toLowerCase();
+    const currentPaper = appearance.paperColor.toLowerCase();
+    const nextAccent =
+      currentAccent === (switchingToDark ? LIGHT_ACCENT : DARK_ACCENT).toLowerCase()
+        ? switchingToDark
+          ? DARK_ACCENT
+          : LIGHT_ACCENT
+        : appearance.accentColor;
+    const nextSprout =
+      currentSprout === (switchingToDark ? LIGHT_SPROUT : DARK_SPROUT).toLowerCase()
+        ? switchingToDark
+          ? DARK_SPROUT
+          : LIGHT_SPROUT
+        : appearance.sproutColor;
+    const nextPaper =
+      currentPaper === (switchingToDark ? LIGHT_PAPER : DARK_PAPER).toLowerCase()
+        ? switchingToDark
+          ? DARK_PAPER
+          : LIGHT_PAPER
+        : appearance.paperColor;
+    onAppearanceChange({ ...appearance, mode, accentColor: nextAccent, sproutColor: nextSprout, paperColor: nextPaper });
+  };
+
+  return (
+    <Card style={{ padding: "4px 24px 24px" }}>
+      <SettingsRow
+        title="Night mode"
+        description="Choose the base surface and text palette for the whole app."
+      >
+        <Segmented<AppearanceMode>
+          value={appearance.mode}
+          onChange={setMode}
+          options={[
+            { value: "light", icon: "sun", label: "Light" },
+            { value: "dark", icon: "moon", label: "Night" }
+          ]}
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        title="Custom colors"
+        description="Tune the app accent, plant motif, and paper tint. Saved on this device."
+      >
+        <div style={{ display: "grid", gap: 14, maxWidth: 520 }}>
+          <ColorSetting
+            label="Main accent"
+            description="Primary buttons, focus rings, selected outlines."
+            value={appearance.accentColor}
+            onChange={(accentColor) => update({ accentColor })}
+          />
+          <ColorSetting
+            label="Plant color"
+            description="Sprout, seed, success, and harvest details."
+            value={appearance.sproutColor}
+            onChange={(sproutColor) => update({ sproutColor })}
+          />
+          <ColorSetting
+            label="Paper tint"
+            description="Sidebar, footer, and warm workbench surfaces."
+            value={appearance.paperColor}
+            onChange={(paperColor) => update({ paperColor })}
+          />
+        </div>
+      </SettingsRow>
+
+      <SettingsRow
+        title="Reset appearance"
+        description="Return to the default Skrowt harvest palette."
+      >
+        <Button variant="secondary" icon="refresh" onClick={onAppearanceReset}>
+          Reset theme
+        </Button>
+      </SettingsRow>
+    </Card>
+  );
+}
+
+function ColorSetting({
+  description,
+  label,
+  onChange,
+  value
+}: {
+  description: string;
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <label
+      style={{
+        display: "grid",
+        gridTemplateColumns: "36px minmax(0, 1fr) 112px",
+        gap: 10,
+        alignItems: "center"
+      }}
+    >
+      <input
+        type="color"
+        value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#000000"}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={label}
+        style={{
+          width: 36,
+          height: 36,
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          background: "var(--surface)",
+          padding: 3
+        }}
+      />
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>{label}</span>
+        <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}>{description}</span>
+      </span>
+      <TextInput
+        value={value}
+        maxLength={7}
+        onChange={(event) => onChange(event.target.value)}
+        style={{ height: 34, fontFamily: "var(--font-mono)" }}
+      />
+    </label>
   );
 }
 

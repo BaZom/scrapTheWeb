@@ -67,7 +67,7 @@ def preview_from_snapshot(
     dom_nodes: list[dict[str, Any]],
     container_selector: str,
     picks: list[dict[str, str]],
-    limit: int = 20,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     """Fast preview straight from the render snapshot — no S3 fetch, no HTML re-parse.
 
@@ -115,7 +115,10 @@ def preview_from_snapshot(
                 }
             ]
     else:
-        for container in _matching_nodes(nodes, container_selector)[:limit]:
+        containers = _matching_nodes(nodes, container_selector)
+        if limit is not None:
+            containers = containers[:limit]
+        for container in containers:
             rows.append(
                 {
                     field["name"]: _snapshot_value(
@@ -163,20 +166,21 @@ def _generate_relative_selector(
     descendants = _descendants_by_container(container_ids, nodes, node_by_id)
     selected_descendants = descendants[selected_container["nodeId"]]
 
-    scored: list[tuple[tuple[int, int, int], str, str, int]] = []
+    scored: list[tuple[tuple[int, int, int, int], str, str, int]] = []
     for selector, strategy in candidates:
         per_container_counts = [
             len(_select_within(descendants[container["nodeId"]], selector, node_by_id))
             for container in container_nodes
         ]
-        if not per_container_counts or per_container_counts[0] < 1:
+        if not per_container_counts:
             continue
         selected_matches = _select_within(selected_descendants, selector, node_by_id)
         if selected["nodeId"] not in {node["nodeId"] for node in selected_matches}:
             continue
-        exact_bonus = 0 if all(count == 1 for count in per_container_counts) else 1
-        selected_count = per_container_counts[0]
-        score = (exact_bonus, _strategy_rank(strategy), len(selector))
+        missing_containers = sum(1 for count in per_container_counts if count < 1)
+        extra_matches = sum(max(0, count - 1) for count in per_container_counts)
+        selected_count = len(selected_matches)
+        score = (missing_containers, extra_matches, _strategy_rank(strategy), len(selector))
         scored.append((score, selector, strategy, selected_count))
 
     if scored:

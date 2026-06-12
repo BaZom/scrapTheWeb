@@ -1,12 +1,18 @@
-# Harvestly Extra Harvest Assets
+# Skrowt Harvest Assets
 
-More SVG UI resources for the Harvestly/ScrapTheWeb redesign.
+Seed, sprout, and Skrowt brand resources for the ScrapTheWeb redesign. The directory keeps its
+historical `harvest-assets` name because the visual system still uses the harvest/plant theme.
 
 ## New assets
 
 - `harvestly-browser-sprout.svg`
-- `harvestly-logo-source.png`
-- `harvestly-wordmark.png`
+- `harvestly-logo-source.png` (legacy)
+- `harvestly-wordmark.png` (legacy)
+- `skrowt-wordmark-source.jpg`
+- `skrowt-wordmark.png`
+- `skrowt-emblem-source.jpg`
+- `skrowt-emblem.png`
+- `skrowt-icon.png`
 - `data-rows-sprout.svg`
 - `selected-card-seed-burst.svg`
 - `table-harvest-ready.svg`
@@ -21,8 +27,10 @@ More SVG UI resources for the Harvestly/ScrapTheWeb redesign.
 ## Recommended use
 
 - Browser/source concept: `harvestly-browser-sprout.svg`
-- Main app/auth logo: `harvestly-wordmark.png` (`harvestly-logo-source.png` is the original
-  pasted source image)
+- Main app/auth logo: `skrowt-wordmark.png` (`skrowt-wordmark-source.jpg` is the original
+  supplied source image)
+- Secondary auth/brand visual: `skrowt-emblem.png`
+- Collapsed sidebar icon: `skrowt-icon.png`
 - Preview table/reward state: `table-harvest-ready.svg`
 - Pattern found card: `selected-card-seed-burst.svg`
 - Empty or onboarding card: `empty-state-sprout-card.svg`

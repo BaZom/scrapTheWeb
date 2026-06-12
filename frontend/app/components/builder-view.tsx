@@ -95,6 +95,7 @@ export type BuilderProps = {
   savedRecipe: Recipe | null;
   recipeBusy: boolean;
   onSaveRecipe: () => void;
+  onOpenRunTest: () => void;
   imageSize: { width: number; height: number } | null;
   onImageLoad: (size: { width: number; height: number }) => void;
   renderBusy: boolean;
@@ -488,7 +489,7 @@ export function BuilderView(props: BuilderProps) {
 
   return (
     <div className="builder-root">
-      {/* TOP: flow + actions, matching the Harvestly reference workbench. */}
+      {/* TOP: flow + actions, matching the Skrowt harvest workbench. */}
       <div className="builder-topbar">
         {/* Left grid column intentionally empty (keeps the stepper centred). The recipe name
             auto-derives on render (reducer `render_succeeded` → `suggestedName`); the sidebar
@@ -502,14 +503,36 @@ export function BuilderView(props: BuilderProps) {
 
         <div className="builder-actions">
           <Button
+            variant="secondary"
+            size="sm"
+            icon="play"
+            disabled={!props.savedRecipe || props.recipeBusy}
+            onClick={props.onOpenRunTest}
+            title={props.savedRecipe ? "Open the live test workspace for this recipe" : "Save the recipe first"}
+          >
+            Test run
+          </Button>
+          <Button
             variant="primary"
             size="sm"
             icon="bookmark"
-            disabled={props.recipeBusy || !props.preview || props.fields.length === 0 || !props.recipeName.trim()}
+            disabled={
+              props.recipeBusy ||
+              Boolean(props.savedRecipe) ||
+              !props.preview ||
+              props.fields.length === 0 ||
+              !props.recipeName.trim()
+            }
             onClick={props.onSaveRecipe}
-            title={!props.preview ? "Preview records first to see the data, then save" : undefined}
+            title={
+              props.savedRecipe
+                ? "Recipe saved"
+                : !props.preview
+                  ? "Preview records first to see the data, then save"
+                  : undefined
+            }
           >
-            {props.recipeBusy ? "Saving…" : "Save recipe"}
+            {props.recipeBusy ? "Saving…" : props.savedRecipe ? "Saved" : "Save recipe"}
           </Button>
         </div>
       </div>
@@ -620,7 +643,7 @@ export function BuilderView(props: BuilderProps) {
                 >
                   <div
                     style={{
-                      background: "white",
+                      background: "var(--surface)",
                       border: "1px solid var(--border)",
                       borderRadius: "12px 12px 0 0",
                       display: "flex",
@@ -661,7 +684,7 @@ export function BuilderView(props: BuilderProps) {
 
                   <div
                     style={{
-                      background: "white",
+                      background: "var(--surface)",
                       border: "1px solid var(--border)",
                       borderTop: 0,
                       borderRadius: "0 0 12px 12px",
@@ -952,7 +975,7 @@ export function BuilderView(props: BuilderProps) {
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
-                      background: "white",
+                      background: "var(--surface)",
                       border: "1px solid var(--border)",
                       borderRadius: 10,
                       fontSize: 12,
@@ -1495,7 +1518,7 @@ export function BuilderView(props: BuilderProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {previewRows.slice(0, 20).map((row, i) => (
+                  {previewRows.map((row, i) => (
                     <AnimatedPreviewRow key={i} index={i}>
                       {props.fields.map((f) => (
                         <td

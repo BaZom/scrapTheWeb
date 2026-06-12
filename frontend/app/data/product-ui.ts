@@ -6,6 +6,7 @@ export type AppView =
   | "monitorDetail"
   | "recipes"
   | "builder"
+  | "runTest"
   | "runs"
   | "exports"
   | "settings"
@@ -28,6 +29,7 @@ export const navItems: NavItem[] = [
   { id: "dashboard", label: "Overview", icon: "dashboard" },
   { id: "monitors", label: "Monitors", icon: "monitor", badge: "Soon" },
   { id: "recipes", label: "Recipes", icon: "recipe" },
+  { id: "runTest", label: "Run Test", icon: "play" },
   { id: "runs", label: "Runs", icon: "runs" },
   { id: "exports", label: "Exports", icon: "exports" }
 ];
@@ -43,6 +45,7 @@ export const pageCopy: Record<AppView, { title: string; subtitle: string }> = {
   },
   recipes: { title: "Recipes", subtitle: "Saved extraction templates" },
   builder: { title: "Recipe Builder", subtitle: "Turn any URL into structured records" },
+  runTest: { title: "Run Test", subtitle: "Fetch live data and review changes" },
   runs: { title: "Runs", subtitle: "Execution history" },
   exports: { title: "Exports", subtitle: "CSV & JSON from completed runs" },
   settings: { title: "Settings", subtitle: "Workspace, security, billing" },

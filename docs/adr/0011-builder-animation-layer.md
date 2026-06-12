@@ -248,9 +248,10 @@ Decision:
 - **Builder is configuration-only.** The header stepper now ends at `Save`; the builder keeps
   URL render, item/field selection, snapshot preview, and save. Live execution controls are no
   longer shown in the builder header or bottom panel.
-- **Runs owns live data review.** Starting a saved recipe routes to the Runs screen, selects the
-  new run, and gives it a review panel with status, duration, real extracted records, detailed
-  new/changed/removed change rows, and CSV/JSON export actions. Run history stays underneath.
+- **Run Test owns live data review.** Saving a recipe routes to a dedicated Run Test screen
+  with that recipe selected. Starting a test there selects the new run and gives it a review
+  panel with status, duration, real extracted records, detailed new/changed/removed change rows,
+  and CSV/JSON export actions. Runs remains cross-recipe history.
 - **Sidebar folds.** `AppShell` now has a client-side collapsed state, compact wordmark
   fallback, icon-only navigation, and a chevron control so the builder can reclaim horizontal
   space.
@@ -283,3 +284,122 @@ Decision:
   is Harvestly while the codebase/repo/APIs keep the internal name ScrapTheWeb.
 
 Preserved: no backend/API/reducer/extraction change; auto-naming, save, and run behavior intact.
+
+## Follow-up 9 (2026-06-12) — Skrowt replaces Harvestly as the visible brand
+
+The user provided two Skrowt logo designs and asked for the app to use this brand instead of
+Harvestly while keeping the seed/plant theme.
+
+Decision:
+
+- **Primary brand:** the horizontal Skrowt wordmark is now the main sidebar/auth/README logo
+  (`pics/skrowt-wordmark.png`, source `pics/skrowt-wordmark-source.jpg`) because it fits the
+  existing rail and sign-in header.
+- **Secondary brand use:** the icon/tagline composition is kept as a larger auth-side brand
+  visual (`pics/skrowt-emblem.png`) and as a compact collapsed-sidebar icon
+  (`pics/skrowt-icon.png`).
+- **Theme preserved:** the harvest/seed/sprout motion assets and internal component names stay
+  in place. Only the visible brand label and logo changed; the codebase/repo/API name remains
+  ScrapTheWeb.
+
+Preserved: no backend/API/reducer/extraction change.
+
+## Follow-up 10 (2026-06-12) — user appearance controls
+
+The user asked for night mode and custom colors from Settings. This is a user preference, not a
+workspace contract yet, so it is stored locally rather than added to backend workspace settings.
+
+Decision:
+
+- **Settings → Appearance** adds Light/Night mode and color controls for the main accent, the
+  sprout/plant color, and the warm paper/sidebar tint.
+- **Application model:** `app/page.tsx` persists `scraptheweb.appearance.v1` in
+  `localStorage`, applies `data-theme` to `document.documentElement`, and writes CSS variables
+  for the custom colors.
+- **Night mode:** `globals.css` now defines a dark token set under `html[data-theme="dark"]`.
+  Common hardcoded white inline surfaces were converted to `var(--surface)` so the app does not
+  keep bright panels in night mode.
+
+Preserved: no backend/API/reducer/extraction change; preferences are per-device for now.
+
+## Follow-up 11 (2026-06-12) — explicit builder-to-run hand-off
+
+The builder/run split was correct, but saving a recipe immediately navigated away from the
+builder. That made it hard for the user to understand the builder's final saved state and left
+no obvious in-place action to move into live testing.
+
+Decision:
+
+- **Save stays in the builder.** Saving persists the recipe, marks the final Save step, selects
+  that recipe for later testing, and does not automatically switch views.
+- **Test run is always visible.** The builder topbar has a **Test run** action next to **Save
+  recipe**. It is disabled until `savedRecipe` exists, then opens the dedicated **Run Test**
+  page with the saved recipe selected.
+- **No surprise execution.** The button only navigates to the run workspace; the user still
+  starts the live fetch from the Run Test page.
+
+Preserved: no backend/API/reducer/extraction change; live execution and exports remain outside
+the builder.
+
+## Follow-up 12 (2026-06-12) — saved runs honor single-page extraction scope
+
+After the Run Test page became the live-data workspace, a saved run could complete with
+`No records extracted` even though the builder preview had succeeded. The mismatch was in the
+backend extraction contract: snapshot preview treats single-page recipes as page-wide, but the
+saved-run HTML matcher still searched field selectors under the `body` container. Absolute
+field selectors generated for single pages could therefore miss during the live run.
+
+Decision:
+
+- **`recipe_runner.extract_preview_rows` accepts `page_type`.** Listing remains unchanged:
+  match item containers, then extract fields inside each container.
+- **Single-page recipes are page-wide.** When `page_type == "single"` (or the container selector
+  is the synthetic `body` selector), the runner extracts one row from the parsed document root.
+- **Worker passes recipe shape.** `run_recipe` forwards saved config `pageType` (falling back to
+  the recipe row) into the runner so the saved run uses the same shape contract as preview.
+- **Regression coverage.** `test_recipe_runner.py` now covers an absolute single-page field
+  selector against a `body` recipe.
+
+Preserved: listing recipe extraction, frontend flow, API shape, and run/export surfaces.
+
+## Follow-up 13 (2026-06-12) — preview rows match matched items
+
+The builder could report more matched items than preview rows, for example **27 matches** but
+only **20 preview rows**, because snapshot preview, the HTML runner, and the frontend table all
+had fixed 20-row caps. That contradicted the user's expectation that match count and preview
+count describe the same set.
+
+Decision:
+
+- **No hidden fixed preview cap.** `preview_from_snapshot` now returns every matched container by
+  default. An explicit optional `limit` remains available only for callers/tests that ask for it.
+- **Saved runs follow the same default.** `extract_preview_rows` now extracts every matched
+  listing container by default, while still accepting an explicit optional limit.
+- **Frontend renders all preview rows it receives.** The builder table no longer slices the
+  preview to 20 rows.
+- **Regression coverage.** The snapshot preview test now uses 27 cards so a 20-row cap fails
+  visibly.
+
+Preserved: single-page one-row preview/run behavior and the optional explicit limit parameter.
+
+## Follow-up 14 (2026-06-12) — save guard + field selector coverage
+
+The builder could still save the same unchanged recipe repeatedly, and Booking-style pages
+showed another selector problem: 27 matched result cards, but only the first few preview rows
+had field values because the relative field selector preferred a stable-looking class that
+covered only part of the matched set.
+
+Decision:
+
+- **Unchanged saved recipes cannot be saved again.** Once `savedRecipe` exists, the builder
+  topbar button changes from **Save recipe** to **Saved** and is disabled. The save handler also
+  returns early if the current recipe is already saved.
+- **Coverage beats stable-looking partial classes.** Relative field selector scoring now orders
+  candidates by missing containers, then extra matches, then strategy rank and length. This
+  favors selectors that extract one value from every matched card before selectors that only
+  work on a subset.
+- **Regression coverage.** Selector tests now model 27 cards where a class appears on only the
+  first 6 field nodes; preview must still produce non-empty values for all 27 rows.
+
+Preserved: the explicit Test run hand-off, one-row single-page behavior, and optional explicit
+preview limits.

@@ -36,6 +36,8 @@ export type IconName =
   | "pause"
   | "clock"
   | "calendar"
+  | "sun"
+  | "moon"
   | "link"
   | "globe"
   | "database"
@@ -276,6 +278,22 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M8 3V7" />
       <path d="M16 3V7" />
     </>
+  ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2V5" />
+      <path d="M12 19V22" />
+      <path d="M2 12H5" />
+      <path d="M19 12H22" />
+      <path d="M4.9 4.9L7 7" />
+      <path d="M17 17L19.1 19.1" />
+      <path d="M19.1 4.9L17 7" />
+      <path d="M7 17L4.9 19.1" />
+    </>
+  ),
+  moon: (
+    <path d="M20.5 14.8C18.9 16.1 16.8 16.8 14.6 16.5C10.7 16 7.7 12.9 7.2 9C6.9 6.8 7.6 4.7 8.9 3.1C5.2 4.3 2.5 7.8 2.5 11.9C2.5 17 6.6 21.1 11.7 21.1C15.8 21.1 19.3 18.5 20.5 14.8Z" />
   ),
   link: (
     <>

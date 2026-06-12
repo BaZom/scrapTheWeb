@@ -1,7 +1,7 @@
-// Renders a Harvestly art asset from /public/harvest-assets (provided by the design team).
+// Renders a Skrowt harvest art asset from /public/harvest-assets (provided by the design team).
 // The animated SVGs self-animate via internal CSS and ship their own prefers-reduced-motion
 // handling, so they're used as plain <img> (per the asset-pack README). currentColor inside
-// an <img> resolves to ink black, which is exactly the monochrome Harvestly palette.
+// an <img> resolves to ink black, which is exactly the monochrome Skrowt palette.
 
 type HarvestArtProps = {
   // Path under /harvest-assets, e.g. "animated/animated-sprout-grow.svg" or "pics/sprout-logo.svg".

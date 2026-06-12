@@ -1,6 +1,6 @@
 "use client";
 
-// The Harvestly builder progress indicator (matches the design reference): five numbered
+// The Skrowt harvest builder progress indicator: five numbered
 // circles — LOAD · PICK · CHOOSE · PREVIEW · SAVE — joined by thin straight connectors, with
 // the label under each circle. Only the CURRENT step is filled (ink); completed steps keep a
 // solid ring, upcoming steps a light ring. Visual-only: takes the existing step labels + the

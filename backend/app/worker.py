@@ -249,6 +249,7 @@ async def run_recipe(
             rendered["html"],
             str(config["containerSelector"]),
             list(config["fields"]),
+            page_type=str(config.get("pageType") or recipe.page_type or "listing"),
         )
         await _persist_extracted_records(ctx, run_id, recipe_id, organization_id, rows, config)
         change_count = await _persist_change_events(ctx, run_id)

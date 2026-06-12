@@ -2,8 +2,8 @@
 
 The builder is the visual, **no-code** workbench where a user turns a public URL into a
 reusable extraction **recipe**: pick the repeating item, choose which fields to collect,
-preview the screenshot snapshot, and save. Live test runs are reviewed on the separate
-**Runs** page. This file is the source of truth for how it works today.
+preview the screenshot snapshot, and save. Live test runs are started and reviewed on the
+separate **Run Test** page. This file is the source of truth for how it works today.
 
 > **Primary user = a non-coder.** The hard rule throughout the builder: **control comes from
 > clicking, ticking, and toggling — never from typing CSS, regex, or other code.** No selector
@@ -74,22 +74,30 @@ first value is ticked (ADR 0010).
 Selecting fields extracts **nothing**. Clicking **Preview records** does one backend call that
 generates each selected field's selector and extracts **all matched items** from the render
 snapshot, showing them in the **bottom panel** table. Each column has an **×** to drop that
-field. (Snapshot preview is fast and is a *verification* view — values may be truncated to
-~160 chars; the saved run produces full values from fresh HTML.)
+field. The preview row count follows the selector match count for list pages (for example,
+27 matched cards → 27 preview rows); single pages preview one row. (Snapshot preview is fast
+and is a *verification* view — values may be truncated to ~160 chars; the saved run produces
+full values from fresh HTML.)
 
 ### 1.6 Save
 **Save recipe** writes the recipe to the database — it is the **only** persistence in the
 builder, and it's **disabled until a preview exists** (so the user always sees the data first).
-Running is intentionally outside the builder. After saving, the user starts a live test from
-the saved recipe list; the app switches to the **Runs** page, where the worker re-fetches the
-live page(s), extracts real data, persists records, computes diffs vs the previous run, and
-offers CSV/JSON export.
+Once the current recipe is saved, the button changes to **Saved** and is disabled so the same
+unchanged recipe cannot be saved repeatedly. Editing upstream mapping state clears
+`savedRecipe`, which makes saving available again for a changed recipe.
+Running is intentionally outside the builder. The builder topbar keeps a **Test run** button
+visible at all times, but it is disabled until the recipe has been saved. Saving keeps the
+user on the builder in the final **Save** step; clicking **Test run** then opens the **Run
+Test** page with that saved recipe selected. There, the user starts a live test; the worker
+re-fetches the live page(s), extracts real data, persists records, computes diffs vs the
+previous run, and offers CSV/JSON export.
 
-### 1.7 Runs page review
-The **Runs** page is the live-data workspace. Starting a saved recipe selects the new run and
-opens a review panel with real extracted records, run status, duration, change counts, detailed
-new/changed/removed rows, and CSV/JSON export actions. The run history table remains below the
-review panel for filtering/searching prior runs.
+### 1.7 Run Test page
+The **Run Test** page is the live-data workspace. It has a saved-recipe picker, a **Run test**
+button, a review panel with real extracted records, run status, duration, change counts,
+detailed new/changed/removed rows, and CSV/JSON export actions. Recent tests for the selected
+recipe remain below the review panel. The separate **Runs** page stays as cross-recipe
+execution history.
 
 ---
 
@@ -103,7 +111,7 @@ review panel for filtering/searching prior runs.
 - **Progressive disclosure.** The one-click happy path stays simple; refinement (missed items,
   multi-attribute fields) appears only when needed.
 - **Verify before commit.** Preview is a no-write dry run; the recipe DB write happens only on
-  Save, and live data fetching is reviewed separately on Runs.
+  Save, and live data fetching is reviewed separately on Run Test.
 - **One source of truth per concern.** The match count, the on-screenshot outline, and
   extraction all come from the same selector engine, so they can't disagree.
 
@@ -147,10 +155,16 @@ Two distinct extractors, by design:
   **flat `domNodes` snapshot** (from Redis). Supports the grammar it emits: `>`-chained
   `tag` / `.class` / `#id` / `[attr="v"]` / `:nth-of-type(n)`. Powers selector **generation**
   (`generate_selector`) and the fast **snapshot preview** (`preview_from_snapshot`).
-  Deliberately *not* a full CSS engine — see
+  For relative field selectors, candidates are scored by coverage first: a selector that fills
+  every matched item wins over a "stable" class that only exists in a few cards. Snapshot
+  preview returns one row per matched container for list pages; it does not apply a hidden
+  fixed sample cap. Deliberately *not* a full CSS engine — see
   ADR 0001 D4 / 0007 D1.
 - **HTML matcher** (`backend/app/recipe_runner.py`) — parses real HTML and runs the selectors;
-  used by the **saved run** (and the legacy `/preview`), where full fidelity matters.
+  used by the **saved run** (and the legacy `/preview`), where full fidelity matters. Listing
+  recipes extract fields inside each matched item container; single-page recipes extract one
+  page-wide row so absolute field selectors generated during the builder preview still match
+  during the saved run.
 
 **Why the snapshot path is the preview path:** the render snapshot already holds every
 element's text/href/src, so for *building and verifying* a recipe the data is available —
@@ -159,7 +173,7 @@ against freshly-fetched pages.
 
 **Performance note (current):** relative-selector matching precomputes each container's
 descendants once per call and shares the `nodeId → node` map (avoids an O(nodes²) descendant
-test). A 200-card page previews in ~70 ms.
+test). Preview extracts every matched list item so the row count agrees with the match count.
 
 ---
 
@@ -168,9 +182,9 @@ test). A 200-card page previews in ~70 ms.
 ### Frontend (`frontend/`)
 | File | Responsibility |
 |------|----------------|
-| `app/page.tsx` | Orchestration: holds the reducer, all async handlers (render, pick, **preview**, save, run, export), draft persistence, SSE run progress. Builds `builderProps` and routes live runs to the Runs view. |
+| `app/page.tsx` | Orchestration: holds the reducer, all async handlers (render, pick, **preview**, save, run, export), draft persistence, SSE run progress. Builds `builderProps` and routes saved recipes/live runs to the Run Test view. |
 | `app/components/builder-view.tsx` | The builder UI: canvas + overlays, shape toggle, item card, the **fields table** (selection), preview button, bottom preview-records panel, and the field **selection model** (`selectedKeys`, `candidatesForNode`, `discoveredFields`). |
-| `app/components/product-screens.tsx` | Workspace screens outside the builder, including the Runs review page for real extracted records, change diffs, history, and CSV/JSON export. |
+| `app/components/product-screens.tsx` | Workspace screens outside the builder, including Run Test for real extracted records/change review/export and Runs for cross-recipe history. |
 | `lib/builder-reducer.ts` | The flow state machine (§3). |
 | `lib/api.ts` | Zod-validated API client + inferred types (`generateSelector`, `previewFromSnapshot`, `previewPageSession`, recipes, runs, exports, SSE `streamRunEvents`). |
 | `app/components/ui.tsx`, `icons.tsx` | Design-system primitives (Button, Badge, Card, Segmented, Stepper, Tabs, …) and icons. |
@@ -181,7 +195,7 @@ test). A 200-card page previews in ~70 ms.
 |------|----------------|
 | `page_sessions.py` | Page-session endpoints: render/create, `GET screenshot`, `POST /selector`, `POST /preview` (HTML), `POST /preview/snapshot` (fast). Loads `domNodes` from Redis, HTML from S3 (via the cache). |
 | `selector_generator.py` | The snapshot matcher + `generate_selector` / `preview_from_snapshot` and helpers (`_matching_nodes`, `_matching_descendants`, `_descendants_by_container`, `_select_within`). |
-| `recipe_runner.py` | `parse_html` + `select_nodes` + `extract_preview_rows` — authoritative HTML extraction for runs. |
+| `recipe_runner.py` | `parse_html` + `select_nodes` + `extract_preview_rows` — authoritative HTML extraction for runs; honors listing vs single-page extraction scope. |
 | `worker.py` | arq worker: Playwright render → `render_scripts/dom_candidates.js` (capture DOM + candidates) → consent/overlay reduction → ad/tracker blocking → `_wait_for_dom_stable`; writes screenshot+HTML to S3, payload to Redis. |
 | `page_html_cache.py` | Best-effort in-process TTL+LRU cache of page HTML (ADR 0008). |
 | `overlay_reduction.py` | Consent/cookie overlay dismissal patterns. |
@@ -243,9 +257,9 @@ highlights:
 
 ---
 
-## 9. Harvestly theme + motion layer — ADR 0011
+## 9. Skrowt brand + harvest motion layer — ADR 0011
 
-The builder wears the **Harvestly** look: monochrome ink-on-paper, monospace, quiet — plus a
+The builder wears the **Skrowt** brand: monochrome ink-on-paper, monospace, quiet — plus a
 reusable **motion layer** that gives calm feedback at meaningful product moments. The motion is
 **visual-only** (state lives in the view via `useState`/`useEffect`, **never in the reducer**),
 built on `motion` (`motion/react`); every piece respects `prefers-reduced-motion`.
@@ -262,10 +276,14 @@ built on `motion` (`motion/react`); every piece respects `prefers-reduced-motion
   picking, and preview without adding bright chrome.
 - **Type:** **Inconsolata** everywhere (`layout.tsx` font link, `--font-sans`/`--font-mono`);
   Geist Mono is the fallback.
-- **Brand + shell:** the builder uses a builder-first Harvestly workbench shell: the uploaded
-  Harvestly wordmark, a small "turn websites into structured data" tagline, Builder-first nav,
+- **Brand + shell:** the builder uses a builder-first Skrowt workbench shell: the uploaded
+  Skrowt wordmark, a small "turn websites into structured data" tagline, Builder-first nav,
   and no generic dashboard header above the builder. This is a *visible-label* change only —
   there is **no** internal/global rename (the codebase, repo, and APIs stay ScrapTheWeb).
+- **Appearance preferences:** Settings → Appearance lets the user choose **Light** or
+  **Night** mode and customize the main accent, plant/sprout color, and paper/sidebar tint.
+  These preferences are local to the device (`localStorage`) and applied by `app/page.tsx`
+  through `data-theme` plus CSS variables on `document.documentElement`.
 
 ### Art assets (provided kit)
 The illustrations come from the design team's kit in **`frontend/public/harvest-assets/`**
@@ -276,8 +294,9 @@ The illustrations come from the design team's kit in **`frontend/public/harvest-
 `logo`, `dataRows`, `emptyCard`, `fieldLink`, `fieldImage`, `fieldText` — the kit holds more
 SVGs; add a key when one is used). `currentColor` inside an `<img>` resolves to
 ink, matching the monochrome palette. Placements: primary sidebar/auth brand
-(`pics/harvestly-wordmark.png`, derived from the uploaded `pics/harvestly-logo-source.png`,
-referenced directly), small sprout mark (`pics/sprout-logo.svg`),
+(`pics/skrowt-wordmark.png`, derived from the uploaded `pics/skrowt-wordmark-source.jpg`,
+referenced directly), secondary auth brand visual (`pics/skrowt-emblem.png`), collapsed-sidebar
+icon (`pics/skrowt-icon.png`), small sprout mark (`pics/sprout-logo.svg`),
 stepper terminus (`animated/animated-sprout-grow.svg`), stepper completed-step and seed-trail moments, field
 row chips (`pics/field-chip-*.svg`), empty preview
 state (`pics/empty-state-sprout-card.svg`), page/screenshot loading
@@ -311,7 +330,7 @@ components were removed in favour of this kit.
     sprout art (via `HarvestArt`) on the preview-ready cue, the empty preview state, and the
     "Saved" badge.
 - **Friendly copy:** plain-language moments — "Click one result to teach the pattern" → "Great!
-  We found N similar results" → "Looking good! Save this recipe, then run it from Runs."
+  We found N similar results" → "Looking good! Save this recipe, then run it from Run Test."
 - **Friendly field names (display-only):** `isUglyGeneratedName` shows a *"Rename this field"*
   placeholder for auto names like `field_1` / `text_title3`. It **never** changes the internal
   key or the committed field name — purely a UI prompt.

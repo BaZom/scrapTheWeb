@@ -35,6 +35,13 @@ render + extraction) · Postgres · Redis · S3-compatible storage. See `README.
     reference file, and close/remove the backlog item.
   - So a non-trivial change typically touches **both**: the ADR (why, in this commit) and the
     reference file (the new current truth, in this commit).
+- **Context efficiency:** when continuing in the same feature area/thread, rely first on the
+  existing thread context and any current working summary. Do **not** broadly reread the same
+  docs every turn. Use targeted reads (`rg -n`, then `sed -n`/`nl -ba` around exact lines),
+  avoid whole-file reads and large diffs unless needed, and update only the touched reference
+  doc/ADR sections. Prefer focused tests first; run broader checks when shared types, build
+  config, extraction contracts, or broad UI behavior are affected. If a persistent working
+  note helps, keep it local/in-repo under ignored `scratch/`, not outside the repo.
 - **Small, isolated commits**, one logical change each. Commit pre-existing uncommitted
   work separately *before* starting new work.
 - **Do NOT add a Co-Authored-By / "Claude Opus" trailer** to commit messages (user

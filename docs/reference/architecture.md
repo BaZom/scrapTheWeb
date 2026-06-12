@@ -6,7 +6,7 @@ the builder's UI/flow detail lives in [builder.md](builder.md).
 
 Product loop: render a URL → reduce blocking overlays → capture screenshot + DOM → user picks
 the repeating item and fields → generate selectors & preview → save the recipe → run on
-demand from the Runs/Recipes workspace → review real records + changes → export CSV/JSON.
+demand from the Run Test workspace → review real records + changes → export CSV/JSON.
 
 ## System components
 
@@ -47,11 +47,13 @@ demand from the Runs/Recipes workspace → review real records + changes → exp
 3. **Persist**: screenshot + `page.html` → **S3**; `domNodes` + candidates → **Redis** (TTL);
    a `page_sessions` row → **Postgres**.
 4. **Build** (no writes): selector generation and the fast snapshot preview read `domNodes`
-   from **Redis** and run the in-house matcher
+   from **Redis** and run the in-house matcher. List previews return one row per matched
+   item container; single-page previews return one page-wide row
    (`selector_generator.py`).
 5. **Save**: the recipe (item selector + fields) → **Postgres** (`recipes` + `recipe_versions`).
 6. **Run**: the worker re-fetches the live page via the same render path, `recipe_runner.py`
-   parses the HTML and extracts records, diffs vs the previous run, persists
+   parses the HTML and extracts records (inside matched containers for listing recipes, or as
+   one page-wide row for single-page recipes), diffs vs the previous run, persists
    records/changes; CSV/JSON export streams from persisted records.
 
 ## Where data lives, and when it's written
@@ -64,9 +66,12 @@ generation/preview read `domNodes` from Redis; the saved run re-fetches live HTM
 
 - **Snapshot matcher** — `selector_generator.py`, over the flat `domNodes`. Fast, in-memory,
   a bounded CSS subset (`>`-chained `tag`/`.class`/`#id`/`[attr]`/`:nth-of-type`). Used at
-  build time: `generate_selector`, `preview_from_snapshot`.
+  build time: `generate_selector`, `preview_from_snapshot`. For list pages, preview row count
+  follows the matched container count instead of a hidden fixed sample limit.
 - **HTML matcher** — `recipe_runner.py`, over parsed HTML. Authoritative. Used by the saved
-  **run** (and the legacy `/preview`), where full fidelity matters.
+  **run** (and the legacy `/preview`), where full fidelity matters. It preserves the builder's
+  shape contract: listing recipes scope fields to each item container; single-page recipes
+  evaluate field selectors page-wide.
 
 Both are fed selectors from the same generator, so a generated selector behaves consistently;
 the snapshot path trades fidelity (text truncation) for speed at build time. See
@@ -138,10 +143,11 @@ should wire a real email provider.
 Next.js app router. `frontend/lib/api.ts` owns the HTTP client + Zod response schemas; auth
 state is persisted locally and refreshed on expiry. The builder is a compact client-side
 workbench (`app/page.tsx` + `app/components/builder-view.tsx`) for configuring and snapshot
-previewing recipes. Live execution is reviewed in the Runs screen (`product-screens.tsx`),
-which shows real extracted records, change diffs, history, and exports. A future iteration
-could split these into dedicated routes (login, settings, recipe create/detail, run detail)
-without changing backend contracts. Builder internals: [builder.md](builder.md).
+previewing recipes. Live execution is started and reviewed in the Run Test screen
+(`product-screens.tsx`), which shows real extracted records, change diffs, recent tests for
+the selected recipe, and exports; Runs remains cross-recipe execution history. A future
+iteration could split these into dedicated routes (login, settings, recipe create/detail, run
+detail) without changing backend contracts. Builder internals: [builder.md](builder.md).
 
 ## Testing strategy
 

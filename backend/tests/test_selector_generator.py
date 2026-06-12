@@ -102,10 +102,10 @@ def _mixed_grid() -> list[dict[str, object]]:
 
 
 def test_preview_from_snapshot_extracts_all_items_from_the_snapshot() -> None:
-    # Build + verify a recipe straight from domNodes — no HTML parse (ADR 0009). Three cards,
-    # each with a title (text) and a link (href); preview returns one row per card.
-    nodes = _build_grid(3)
-    for i in range(3):
+    # Build + verify a recipe straight from domNodes — no HTML parse (ADR 0009). More than
+    # twenty cards catches accidental fixed preview caps; preview returns one row per card.
+    nodes = _build_grid(27)
+    for i in range(27):
         nodes.append(
             _node(
                 f"title-{i}",
@@ -131,9 +131,31 @@ def test_preview_from_snapshot_extracts_all_items_from_the_snapshot() -> None:
     ]
     result = preview_from_snapshot(nodes, "article.product_pod", picks)
     assert [f["name"] for f in result["fields"]] == ["title", "link"]
-    assert len(result["rows"]) == 3
+    assert len(result["rows"]) == 27
     assert result["rows"][1]["title"] == "Title 1"
-    assert result["rows"][2]["link"] == "/p/2"
+    assert result["rows"][26]["link"] == "/p/26"
+
+
+def test_relative_selector_prefers_full_coverage_over_partial_stable_class() -> None:
+    nodes = _build_grid(27)
+    for i in range(27):
+        nodes.append(
+            _node(
+                f"title-{i}",
+                tag="h3",
+                text=f"Title {i}",
+                parentNodeId=f"card-{i}",
+                classes=["promo-title"] if i < 6 else [],
+            )
+        )
+    result = preview_from_snapshot(
+        nodes,
+        "article.product_pod",
+        [{"nodeId": "title-0", "extract": "text", "name": "title"}],
+    )
+    assert len(result["rows"]) == 27
+    assert all(row["title"] for row in result["rows"])
+    assert result["rows"][26]["title"] == "Title 26"
 
 
 def test_preview_from_snapshot_single_page_is_one_row() -> None:
