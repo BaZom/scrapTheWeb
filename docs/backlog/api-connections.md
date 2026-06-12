@@ -18,7 +18,7 @@ already in an advanced setup view.
 
 ## Product Goal
 
-Harvestly should support two ways to collect data:
+Skrowt should support two ways to collect data:
 
 1. Website capture: user opens a website and clicks the data they want.
 2. API connection: user connects an official API and chooses the data they want from the
@@ -49,8 +49,8 @@ Flow:
 
 ```text
 User enters API details
--> Harvestly tests the connection
--> Harvestly stores the secret encrypted
+-> Skrowt tests the connection
+-> Skrowt stores the secret encrypted
 -> User selects the list and details
 -> Monitor uses the connection for future checks
 ```
@@ -60,7 +60,7 @@ User enters API details
 This is the PayPal-style experience and should come later for popular platforms.
 
 The user clicks a provider button, logs in on the provider website, approves access, and
-returns to Harvestly.
+returns to Skrowt.
 
 Example providers later:
 
@@ -75,8 +75,8 @@ Flow:
 ```text
 User clicks "Connect Shopify"
 -> Provider login and approval page
--> Provider redirects back to Harvestly
--> Harvestly stores encrypted access tokens
+-> Provider redirects back to Skrowt
+-> Skrowt stores encrypted access tokens
 -> Monitor uses the official connection
 ```
 

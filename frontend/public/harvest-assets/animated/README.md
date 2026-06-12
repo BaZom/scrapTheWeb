@@ -1,6 +1,6 @@
-# Harvestly Animated Asset Pack
+# Skrowt Animated Asset Pack
 
-Animated SVG/CSS assets for the Harvestly/ScrapTheWeb builder.
+Animated SVG/CSS assets for the Skrowt/ScrapTheWeb builder.
 
 ## Included animated SVGs
 

@@ -2,7 +2,7 @@
 
 ## Summary
 
-A small batch of builder refinements requested after the Harvestly redesign (ADR 0011).
+A small batch of builder refinements requested after the Skrowt redesign (ADR 0011).
 Frontend-only UX polish — no extraction/API changes expected.
 
 ## Items
@@ -10,7 +10,7 @@ Frontend-only UX polish — no extraction/API changes expected.
 ### 1. Polish the preview-records table
 
 The bottom **Preview records** table is functional but wants a visual/UX pass so it matches the
-Harvestly mono look and reads cleanly:
+Skrowt mono look and reads cleanly:
 
 - Column sizing / alignment (avoid overly wide or cramped columns; sensible min/max widths).
 - Value truncation + tooltips for long values; keep the row height calm.
@@ -24,17 +24,16 @@ styles in `globals.css`.
 
 ### 2. Remove dead code in the builder (next time)
 
-The redesign + the missed-item removal (ADR 0009 FU3) left several `BuilderProps` that are no
-longer referenced in `builder-view.tsx` — clean these up and trace them back through
-`page.tsx` (and the reducer where applicable) so the prop, the wiring, and any now-orphaned
-state/handlers all go together:
+The redesign left a few `BuilderProps` that are no longer referenced in `builder-view.tsx`
+(verified 0 uses) — remove them and trace each back through `page.tsx` (and the reducer where
+applicable) so the prop, the wiring, and any now-orphaned state/handlers all go together:
 
 - `onRecipeNameChange` (recipe-name input removed from the topbar)
-- `containerExampleIds`, `onAddItemExample`, `onResetItemExamples` (missed-item broadening removed)
-- `fieldSamples`, `onPickerViewChange` (no longer read)
+- `fieldSamples` (no longer read)
+- `onPickerViewChange` (no longer read; **but** `pickerView` IS still used — keep it)
 
 Verify each is truly unused end-to-end before deleting (some may still be set in `page.tsx`).
-Keep `pickerView` — still used. Re-run typecheck/lint after.
+Re-run typecheck/lint after.
 
 ## Notes
 

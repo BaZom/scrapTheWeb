@@ -1,6 +1,6 @@
-# Harvestly More Animated Assets
+# Skrowt More Animated Assets
 
-Second animated pack for the Harvestly/ScrapTheWeb builder.
+Second animated pack for the Skrowt/ScrapTheWeb builder.
 
 ## Animated SVGs
 
