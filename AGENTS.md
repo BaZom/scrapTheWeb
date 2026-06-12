@@ -25,6 +25,22 @@ So a non-trivial change usually touches the ADR (the *why*) and the reference fi
 *current truth*) in the same commit. Start by reading `docs/reference/README.md` and
 `docs/backlog/README.md`.
 
+## Context efficiency (important)
+
+Keep token usage low without losing codebase understanding:
+
+- When continuing work in the **same feature area/thread**, rely first on the existing thread
+  context and any current working summary. Do **not** broadly reread the same docs every turn.
+- Use targeted reads: `rg -n` for the symbol/section, then `sed -n`/`nl -ba` around only the
+  relevant lines. Avoid whole-file reads and large `git diff` dumps unless genuinely needed.
+- Still follow the documentation rules: for non-trivial feature/flow changes, update the
+  matching `docs/reference/` section and append/extend the relevant ADR. Read only the exact
+  doc sections needed to make those updates unless the area is new or unclear.
+- Prefer focused tests/checks first. Run broader checks when the change touches shared types,
+  build configuration, extraction contracts, or broad UI behavior.
+- If a persistent working note is useful, keep it local/in-repo under ignored `scratch/`
+  rather than re-deriving context from docs and diffs on every follow-up.
+
 ## Product principle (load-bearing)
 
 The **primary user is a non-coder**. In the builder UI, **control comes from clicking,

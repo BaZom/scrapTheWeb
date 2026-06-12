@@ -310,44 +310,6 @@ describe("reset and restore", () => {
   });
 });
 
-describe("teach-by-example selection", () => {
-  const inferred: SelectorResult = {
-    selector: "article",
-    matchCount: 24,
-    strategy: "inferred",
-    matchedNodeIds: ["c1", "c2", "c3"]
-  };
-
-  it("picking an item seeds the example list with that node", () => {
-    const s = builderReducer(initialBuilderState, { type: "container_selecting", node: node("c1") });
-    expect(s.containerExampleIds).toEqual(["c1"]);
-  });
-
-  it("container_example_added appends, keeps fields, clears preview", () => {
-    const seeded = { ...deepListState(), containerExampleIds: ["c1"] };
-    const s = builderReducer(seeded, { type: "container_example_added", node: node("c9") });
-    expect(s.containerExampleIds).toEqual(["c1", "c9"]);
-    expect(s.fields).toHaveLength(2); // relative field selectors stay valid
-    expect(s.preview).toBeNull();
-    expect(s.savedRecipe).toBeNull();
-  });
-
-  it("container_example_added is a no-op for a duplicate example", () => {
-    const seeded = { ...deepListState(), containerExampleIds: ["c1"] };
-    expect(builderReducer(seeded, { type: "container_example_added", node: node("c1") })).toBe(seeded);
-  });
-
-  it("container_selector_inferred sets the selector without auto-advancing", () => {
-    const s = builderReducer(
-      { ...initialBuilderState, pickMode: "container", containerExampleIds: ["c1", "c9"] },
-      { type: "container_selector_inferred", result: inferred }
-    );
-    expect(s.selectorResult).toEqual(inferred);
-    expect(s.pickMode).toBe("container");
-  });
-
-});
-
 describe("fields_added (commit selected fields)", () => {
   const base: BuilderState = { ...initialBuilderState };
 

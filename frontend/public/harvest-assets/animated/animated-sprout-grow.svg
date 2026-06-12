@@ -1,0 +1,18 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated sprout growing">
+  <style>
+    .stem, .leaf { stroke-dasharray: 160; stroke-dashoffset: 160; animation: draw 1.25s ease-out forwards; }
+    .leaf.left { animation-delay: .25s; }
+    .leaf.right { animation-delay: .42s; }
+    .soil { transform-origin: 60px 94px; animation: soil 1s ease-out forwards; opacity: 0; }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes soil { 0% { opacity: 0; transform: scaleX(.45); } 100% { opacity: .18; transform: scaleX(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      .stem, .leaf { animation: none; stroke-dashoffset: 0; }
+      .soil { animation: none; opacity: .18; }
+    }
+  </style>
+  <ellipse class="soil" cx="60" cy="94" rx="30" ry="7" fill="currentColor"/>
+  <path class="stem" d="M60 91 C60 76 60 57 60 34" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path class="leaf left" d="M60 63 C42 61 36 44 53 41 C59 48 60 56 60 63Z" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path class="leaf right" d="M60 58 C78 54 84 37 67 35 C62 42 60 50 60 58Z" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

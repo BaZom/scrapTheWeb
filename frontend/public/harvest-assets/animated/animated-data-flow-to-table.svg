@@ -1,0 +1,43 @@
+<svg width="520" height="220" viewBox="0 0 520 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Data flowing from card to table">
+  <style>
+    .flow-path { stroke-dasharray: 5 10; animation: dash 1.4s linear infinite; }
+    .seed { opacity: 0; animation: moveSeed 2.2s ease-in-out infinite; transform-origin: center; }
+    .s2 { animation-delay: .25s; }
+    .s3 { animation-delay: .5s; }
+    .s4 { animation-delay: .75s; }
+    .table-row { animation: rowIn 2.2s ease-in-out infinite; opacity: .25; }
+    .r2 { animation-delay: .25s; }
+    .r3 { animation-delay: .5s; }
+    @keyframes dash { to { stroke-dashoffset: -45; } }
+    @keyframes moveSeed {
+      0% { opacity: 0; transform: translate(0,0) scale(.7); }
+      18% { opacity: 1; }
+      78% { opacity: 1; }
+      100% { opacity: 0; transform: translate(250px, 24px) scale(1) rotate(24deg); }
+    }
+    @keyframes rowIn {
+      0%, 45% { opacity: .25; }
+      65%, 100% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .flow-path, .seed, .table-row { animation: none; opacity: .8; }
+    }
+  </style>
+
+  <rect x="34" y="48" width="126" height="126" rx="18" stroke="currentColor" stroke-width="2"/>
+  <circle cx="54" cy="68" r="10" fill="currentColor"/>
+  <path d="M74 92H132M74 114H118M74 136H142" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+
+  <rect x="336" y="62" width="150" height="100" rx="14" stroke="currentColor" stroke-width="2"/>
+  <path d="M336 88H486M336 114H486M336 140H486" stroke="currentColor" stroke-width="1.5" opacity=".35"/>
+  <path d="M386 62V162M436 62V162" stroke="currentColor" stroke-width="1.5" opacity=".35"/>
+  <path class="table-row" d="M352 76H374M400 76H421M450 76H473" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path class="table-row r2" d="M352 104H372M400 104H428M450 104H468" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path class="table-row r3" d="M352 130H380M400 130H416M450 130H478" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+
+  <path class="flow-path" d="M166 108 C228 50 276 166 330 112" stroke="currentColor" stroke-width="1.8" opacity=".35"/>
+  <ellipse class="seed" cx="178" cy="104" rx="4" ry="6" fill="currentColor"/>
+  <ellipse class="seed s2" cx="178" cy="104" rx="3" ry="5" fill="#B99A6B"/>
+  <ellipse class="seed s3" cx="178" cy="104" rx="4" ry="6" fill="currentColor"/>
+  <ellipse class="seed s4" cx="178" cy="104" rx="3" ry="5" fill="#B99A6B"/>
+</svg>

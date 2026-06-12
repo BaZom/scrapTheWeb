@@ -1,0 +1,32 @@
+<svg width="360" height="220" viewBox="0 0 360 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Similar results reveal animation">
+  <style>
+    .card { opacity: .18; animation: reveal 2s ease-in-out infinite; transform-origin: center; }
+    .selected { opacity: 1; animation: pulse 2s ease-in-out infinite; }
+    .c2 { animation-delay: .15s; }
+    .c3 { animation-delay: .3s; }
+    .c4 { animation-delay: .45s; }
+    .c5 { animation-delay: .6s; }
+    .c6 { animation-delay: .75s; }
+    @keyframes reveal {
+      0%, 20% { opacity: .16; transform: scale(.985); }
+      45%, 100% { opacity: .75; transform: scale(1); }
+    }
+    @keyframes pulse {
+      0%,100% { transform: scale(1); }
+      45% { transform: scale(1.025); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .card, .selected { animation: none; opacity: .75; }
+      .selected { opacity: 1; }
+    }
+  </style>
+  <rect class="card selected" x="28" y="28" width="88" height="70" rx="12" stroke="currentColor" stroke-width="3"/>
+  <circle cx="42" cy="42" r="9" fill="currentColor"/>
+  <path d="M55 58H92M55 74H82" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+
+  <rect class="card c2" x="136" y="28" width="88" height="70" rx="12" stroke="currentColor" stroke-width="2" stroke-dasharray="5 5"/>
+  <rect class="card c3" x="244" y="28" width="88" height="70" rx="12" stroke="currentColor" stroke-width="2" stroke-dasharray="5 5"/>
+  <rect class="card c4" x="28" y="122" width="88" height="70" rx="12" stroke="currentColor" stroke-width="2" stroke-dasharray="5 5"/>
+  <rect class="card c5" x="136" y="122" width="88" height="70" rx="12" stroke="currentColor" stroke-width="2" stroke-dasharray="5 5"/>
+  <rect class="card c6" x="244" y="122" width="88" height="70" rx="12" stroke="currentColor" stroke-width="2" stroke-dasharray="5 5"/>
+</svg>

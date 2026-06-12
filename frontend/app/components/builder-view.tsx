@@ -1,14 +1,14 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
+
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import type {
   AccessBlock,
-  ChangeEvent,
   ContainerCandidate,
   DomNode,
   ExtractType,
-  ExtractionRun,
   PageSession,
   PreviewField,
   PreviewResult,
@@ -16,6 +16,16 @@ import type {
   SelectorResult
 } from "@/lib/api";
 
+import {
+  AnimatedFieldRow,
+  AnimatedPreviewDrawer,
+  AnimatedPreviewRow,
+  AnimatedResultOutline,
+  HARVEST_ART,
+  HarvestArt,
+  HarvestStepper,
+  SeedBurst
+} from "./animations";
 import { Icon } from "./icons";
 import {
   Badge,
@@ -23,11 +33,7 @@ import {
   Card,
   EmptyState,
   Segmented,
-  StatusBadge,
-  Stepper,
-  Tabs,
-  cx,
-  fmtDuration
+  cx
 } from "./ui";
 
 const LINK_BUTTON_STYLE = {
@@ -40,8 +46,8 @@ const LINK_BUTTON_STYLE = {
   cursor: "pointer"
 } as const;
 
-const LIST_STEPS = ["Load page", "Pick an item", "Choose details", "Preview", "Save & run"];
-const SINGLE_STEPS = ["Load page", "Choose details", "Preview", "Save & run"];
+const LIST_STEPS = ["Load page", "Pick an item", "Choose details", "Preview", "Save"];
+const SINGLE_STEPS = ["Load page", "Choose details", "Preview", "Save"];
 
 const TYPE_COLORS: Record<ExtractType, { bg: string; fg: string }> = {
   text: { bg: "var(--accent-soft)", fg: "var(--accent-deep)" },
@@ -50,6 +56,12 @@ const TYPE_COLORS: Record<ExtractType, { bg: string; fg: string }> = {
   attribute: { bg: "var(--warning-bg)", fg: "var(--warning-fg)" },
   html: { bg: "var(--neutral-bg)", fg: "var(--neutral-fg)" }
 };
+
+function fieldArtFor(extract: ExtractType) {
+  if (extract === "href") return HARVEST_ART.fieldLink;
+  if (extract === "src") return HARVEST_ART.fieldImage;
+  return HARVEST_ART.fieldText;
+}
 
 export type BuilderProps = {
   url: string;
@@ -83,21 +95,12 @@ export type BuilderProps = {
   savedRecipe: Recipe | null;
   recipeBusy: boolean;
   onSaveRecipe: () => void;
-  run: ExtractionRun | null;
-  runBusy: boolean;
-  onRunRecipe: () => void;
-  exportBusy: "csv" | "json" | null;
-  onDownloadExport: (runId: string, format: "csv" | "json") => void;
+  onOpenRunTest: () => void;
   imageSize: { width: number; height: number } | null;
   onImageLoad: (size: { width: number; height: number }) => void;
   renderBusy: boolean;
   error: string | null;
   onNodeSelect: (node: DomNode) => void;
-  // Teach-by-example (ADR 0009): once an item is picked, clicks add more examples to
-  // broaden the match instead of re-picking; Reset starts over from the first example.
-  containerExampleIds: string[];
-  onAddItemExample: (node: DomNode) => void;
-  onResetItemExamples: () => void;
 };
 
 function currentStep(props: BuilderProps) {
@@ -139,6 +142,21 @@ function slugifyName(raw: string): string {
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
+}
+
+// Heuristic: is this an auto-generated / developer-ish field name the user would rather
+// rename? Used ONLY to prompt a friendlier placeholder in the UI — never to change the
+// internal key or the committed field name (those stay exactly as generated).
+function isUglyGeneratedName(name: string | undefined | null): boolean {
+  if (!name) return true;
+  return (
+    /^field(_\d+)?$/i.test(name) ||
+    /_\d+$/.test(name) ||
+    /^(text|link|image|img|src|href)(_?\d+)?$/i.test(name) ||
+    name.includes("selector") ||
+    name.includes("aditem") ||
+    name.includes("galleryimage")
+  );
 }
 
 // A discovered candidate field (ADR 0009): one extractable value from one element.
@@ -187,13 +205,21 @@ function formatValue(value: unknown) {
 }
 
 export function BuilderView(props: BuilderProps) {
-  const [bottomTab, setBottomTab] = useState<"preview" | "changes" | "logs">("preview");
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   // Which discovered fields the user has selected (ADR 0009): candidate key `nodeId:extract`.
   // ONE shared selection — toggled by both the table and screenshot clicks, so they can't
   // conflict. Selecting is instant/client-side; nothing extracts until "Preview records".
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
+  // ---- Animation layer (visual-only — deliberately NOT in the reducer) ----
+  // Seed burst fires once each time a preview lands.
+  const [showSeedBurst, setShowSeedBurst] = useState(false);
+  useEffect(() => {
+    if (!props.preview) return;
+    setShowSeedBurst(true);
+    const t = window.setTimeout(() => setShowSeedBurst(false), 1300);
+    return () => window.clearTimeout(t);
+  }, [props.preview]);
   // Which nodes the container selector matches, so we can outline the whole repeated set
   // on the screenshot. These now come straight from the backend (`selectorResult
   // .matchedNodeIds`) — the same selector engine that produces `matchCount` — so the
@@ -217,8 +243,7 @@ export function BuilderView(props: BuilderProps) {
     () => new Map((props.pageSession?.domNodes ?? []).map((n) => [n.nodeId, n] as const)),
     [props.pageSession]
   );
-  // Candidate cards help the FIRST pick. Once an item is chosen, switch to node overlays so
-  // the matched set is outlined and any missed card can be clicked to include it (ADR 0009).
+  // Candidate cards help the first pick; once an item is chosen, the matched set is outlined.
   const showCandidates =
     props.pickMode === "container" && candidates.length > 0 && !props.selectorResult;
 
@@ -252,23 +277,15 @@ export function BuilderView(props: BuilderProps) {
     handleContainerPick(node);
   }
 
-  // Teach-by-example (ADR 0009): the first container click picks the item (auto-advances);
-  // once an item is selected, further clicks add genuinely-missed items to broaden the match.
-  // Detected items are FROZEN — a click on a matched card OR anywhere inside one is ignored
-  // (it's already included), so only a click OUTSIDE every detected item adds a new example.
-  // (Checking matchedNodeIds alone was the bug: clicking a child inside a card slipped
-  // through and got added as a bogus item.)
+  // Container clicks pick or re-pick the working item. If the click lands inside an already
+  // matched card, use the matched card itself rather than a child node.
   function handleContainerPick(node: DomNode) {
-    if (!props.selectorResult) {
-      props.onNodeSelect(node);
-      return;
-    }
-    if (matchedContainerIdOf(node) !== null) return;
-    props.onAddItemExample(node);
+    const containerId = props.selectorResult ? matchedContainerIdOf(node) : null;
+    props.onNodeSelect((containerId && domNodeById.get(containerId)) || node);
   }
 
   // The matched item-card a node lives in (walk up to the first ancestor in the match set),
-  // or null if it's outside every card. Used to tell field clicks apart (teach-by-example).
+  // or null if it's outside every card.
   function matchedContainerIdOf(node: DomNode): string | null {
     let current: DomNode | undefined = node;
     while (current) {
@@ -277,6 +294,18 @@ export function BuilderView(props: BuilderProps) {
     }
     return null;
   }
+
+  // Percentage geometry for an overlay box, in the same coordinate system the screenshot
+  // overlay buttons use. Shared by the (visual-only) animated outline layer.
+  const overlayGeometry = (n: { x: number; y: number; width: number; height: number }): CSSProperties =>
+    props.imageSize
+      ? {
+          left: `${(n.x / props.imageSize.width) * 100}%`,
+          top: `${(n.y / props.imageSize.height) * 100}%`,
+          width: `${(n.width / props.imageSize.width) * 100}%`,
+          height: `${(n.height / props.imageSize.height) * 100}%`
+        }
+      : {};
 
   // Clicking a detail on the screenshot surfaces ALL its attributes (Text/Link/Image) as
   // rows and highlights them, so the user ticks which one(s) to collect — instead of
@@ -459,178 +488,96 @@ export function BuilderView(props: BuilderProps) {
   const previewRows = props.preview?.rows ?? [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, background: "var(--bg-app)" }}>
-      {/* TOP: name + stepper + actions */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          padding: "12px 24px",
-          borderBottom: "1px solid var(--border)",
-          background: "white",
-          flexShrink: 0,
-          flexWrap: "wrap"
-        }}
-      >
-        <input
-          value={props.recipeName}
-          onChange={(e) => props.onRecipeNameChange(e.target.value)}
-          placeholder="Untitled recipe"
-          className="input"
-          style={{
-            width: 240,
-            fontWeight: 550,
-            height: 32,
-            border: "1px dashed transparent",
-            background: "transparent"
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.border = "1px solid var(--border-strong)";
-            e.currentTarget.style.background = "white";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.border = "1px dashed transparent";
-            e.currentTarget.style.background = "transparent";
-          }}
-        />
-        <Badge tone="outline" dot>
-          {props.savedRecipe ? "Saved" : "Draft"}
-        </Badge>
+    <div className="builder-root">
+      {/* TOP: flow + actions, matching the Skrowt harvest workbench. */}
+      <div className="builder-topbar">
+        {/* Left grid column intentionally empty (keeps the stepper centred). The recipe name
+            auto-derives on render (reducer `render_succeeded` → `suggestedName`); the sidebar
+            carries the brand, so no title/Draft chip is needed here. */}
+        <div className="builder-recipe-chip" />
 
-        <div style={{ flex: 1, display: "flex", justifyContent: "center", minWidth: 0 }}>
-          <Stepper steps={STEPS} current={step} compact onStepClick={props.onStepNavigate} />
+        <div className="builder-stepper-wrap">
+          <HarvestStepper steps={STEPS} current={step} onStepClick={props.onStepNavigate} />
+          <HarvestArt src={HARVEST_ART.sproutGrow} size={52} />
         </div>
 
-        {/* Save creates the recipe in the DB — enabled only after a preview, so the user
-            always sees the data first (ADR 0009). Preview records itself writes nothing. */}
-        <Button
-          variant="secondary"
-          size="sm"
-          icon="bookmark"
-          disabled={props.recipeBusy || !props.preview || props.fields.length === 0 || !props.recipeName.trim()}
-          onClick={props.onSaveRecipe}
-          title={!props.preview ? "Preview records first to see the data, then save" : undefined}
-        >
-          {props.recipeBusy ? "Saving…" : "Save recipe"}
-        </Button>
-        <Button variant="primary" size="sm" icon="play" disabled={!props.savedRecipe || props.runBusy} onClick={props.onRunRecipe}>
-          {props.runBusy ? "Running…" : "Run now"}
-        </Button>
-      </div>
-
-      {/* URL row */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "10px 24px",
-          background: "var(--surface-soft)",
-          borderBottom: "1px solid var(--border)",
-          flexWrap: "wrap"
-        }}
-      >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            props.onLoadPage(e);
-          }}
-          style={{ display: "flex", alignItems: "center", gap: 0, flex: 1, maxWidth: 720, minWidth: 320 }}
-        >
-          <span
-            style={{
-              height: 32,
-              padding: "0 12px",
-              background: "white",
-              border: "1px solid var(--border-strong)",
-              borderRight: 0,
-              borderRadius: "7px 0 0 7px",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              color: "var(--text-muted)",
-              whiteSpace: "nowrap"
-            }}
+        <div className="builder-actions">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="play"
+            disabled={!props.savedRecipe || props.recipeBusy}
+            onClick={props.onOpenRunTest}
+            title={props.savedRecipe ? "Open the live test workspace for this recipe" : "Save the recipe first"}
           >
-            <Icon name="lock" size={12} /> https://
-          </span>
-          <input
-            className="input"
-            value={props.url.replace(/^https?:\/\//, "")}
-            onChange={(e) => props.onUrlChange(`https://${e.target.value.replace(/^https?:\/\//, "")}`)}
-            placeholder="news.ycombinator.com/news"
-            style={{ borderRadius: 0, fontFamily: "var(--font-mono)", fontSize: 13 }}
-          />
+            Test run
+          </Button>
           <Button
             variant="primary"
             size="sm"
-            icon="refresh"
-            type="submit"
-            disabled={props.renderBusy}
-            style={{ borderRadius: "0 7px 7px 0", height: 32 }}
+            icon="bookmark"
+            disabled={
+              props.recipeBusy ||
+              Boolean(props.savedRecipe) ||
+              !props.preview ||
+              props.fields.length === 0 ||
+              !props.recipeName.trim()
+            }
+            onClick={props.onSaveRecipe}
+            title={
+              props.savedRecipe
+                ? "Recipe saved"
+                : !props.preview
+                  ? "Preview records first to see the data, then save"
+                  : undefined
+            }
           >
-            {props.renderBusy ? "Loading…" : "Reload page"}
+            {props.recipeBusy ? "Saving…" : props.savedRecipe ? "Saved" : "Save recipe"}
           </Button>
-        </form>
+        </div>
+      </div>
 
-        <div style={{ flex: 1 }} />
-
-        {/* Page shape: auto-detected on render (ADR 0005), overridable here for the case it
-            guesses wrong — e.g. a single-item page with an incidental repeated strip read as
-            a list. Flipping shape clears the in-progress mapping (selectors differ by shape). */}
-        {props.pageSession ? (
-          <span
-            style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}
+      {/* URL + status command bar */}
+      <div className="builder-command-wrap">
+        <div className="builder-command-bar">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              props.onLoadPage(e);
+            }}
+            className="builder-url-form"
           >
-            Page
-          </span>
-        ) : null}
-        {props.pageSession ? (
-          <Segmented<"list" | "single">
-            value={props.recipeShape}
-            onChange={(v) => props.onShapeChange(v)}
-            options={[
-              { value: "list", icon: "list", label: "List" },
-              { value: "single", icon: "file", label: "Single" }
-            ]}
-          />
-        ) : null}
+            <span className="builder-url-lock">
+              <Icon name="lock" size={13} /> https://
+            </span>
+            <input
+              className="input builder-url-input"
+              value={props.url.replace(/^https?:\/\//, "")}
+              onChange={(e) => props.onUrlChange(`https://${e.target.value.replace(/^https?:\/\//, "")}`)}
+              placeholder="kleinanzeigen.de/hunde-und-welpen"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="refresh"
+              type="submit"
+              disabled={props.renderBusy}
+              className="builder-reload-button"
+            >
+              {props.renderBusy ? "Loading…" : "Reload"}
+            </Button>
+          </form>
 
-        {props.recipeShape !== "single" ? (
-          <Segmented<"container" | "field">
-            value={props.pickMode}
-            onChange={(v) => props.onPickModeChange(v)}
-            options={[
-              { value: "container", icon: "layers", label: "Item" },
-              { value: "field", icon: "cursor", label: "Details" }
-            ]}
-          />
-        ) : null}
-        {/* DOM-tree view is a power-user fallback, tucked behind "Advanced". */}
-        <Button
-          variant="ghost"
-          size="sm"
-          icon="treeNode"
-          onClick={() => props.onPickerViewChange(props.pickerView === "nodes" ? "overlays" : "nodes")}
-        >
-          {props.pickerView === "nodes" ? "Visual" : "Advanced"}
-        </Button>
-        {props.selectorResult && props.recipeShape !== "single" ? (
-          <span className="badge badge-success" style={{ height: 26, padding: "0 10px" }}>
-            <span className="dot" /> {props.selectorResult.matchCount} matches
-          </span>
-        ) : null}
-        {props.pageSession?.overlayDismissals.length ? (
-          <span
-            className="badge badge-info"
-            style={{ height: 26, padding: "0 10px" }}
-            title="Playwright dismissed a blocking popup before capture"
-          >
-            <span className="dot" /> Popup dismissed
-          </span>
-        ) : null}
+          {/* Only a transient loading cue here — the URL bar is otherwise left alone for
+              future URL-related features. Page mode + pick controls moved to the right panel. */}
+          <div className="builder-status-row">
+            {props.renderBusy ? (
+              <span className="builder-status-pill builder-status-pill-live">
+                <HarvestArt src={HARVEST_ART.collecting} size={24} /> Loading page
+              </span>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {props.error ? (
@@ -652,12 +599,13 @@ export function BuilderView(props: BuilderProps) {
 
       {/* MAIN SPLIT */}
       <div
+        className="builder-workbench"
         style={{
           display: "grid",
           // Resize the WINDOWS, not the image (ADR 0009 fix): the page pane shares space with
           // a roomy assistant panel (where the data lives), and the screenshot fills its pane
           // below — so there are no empty gutters around a shrunken image.
-          gridTemplateColumns: "minmax(0, 1fr) minmax(440px, 560px)",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 392px)",
           flex: 1,
           minHeight: 0,
           overflow: "hidden"
@@ -665,25 +613,37 @@ export function BuilderView(props: BuilderProps) {
       >
         {/* Canvas */}
         <div
-          className="canvas-bg"
+          className="canvas-bg builder-canvas-pane"
           style={{
             padding: 20,
             overflow: "auto",
-            borderRight: "1px solid var(--border)",
             minWidth: 0,
             position: "relative"
           }}
         >
+          {props.renderBusy && props.pageSession ? (
+            <div className="builder-canvas-loading" aria-live="polite">
+              <BuilderScreenshotLoading compact />
+            </div>
+          ) : null}
           {props.pageSession?.accessBlock?.blocked ? (
             <AccessBlockNotice block={props.pageSession.accessBlock} url={props.url} />
           ) : null}
-          {props.pageSession ? (
+          {!props.pageSession && props.renderBusy ? (
+            <BuilderScreenshotLoading />
+          ) : props.pageSession ? (
             props.screenshotObjectUrl ? (
               props.pickerView === "overlays" ? (
-                <div style={{ width: "100%" }}>
+                <div
+                  style={{
+                    width: "100%",
+                    marginLeft: 0,
+                    transition: "width 180ms ease, margin-left 180ms ease"
+                  }}
+                >
                   <div
                     style={{
-                      background: "white",
+                      background: "var(--surface)",
                       border: "1px solid var(--border)",
                       borderRadius: "12px 12px 0 0",
                       display: "flex",
@@ -724,7 +684,7 @@ export function BuilderView(props: BuilderProps) {
 
                   <div
                     style={{
-                      background: "white",
+                      background: "var(--surface)",
                       border: "1px solid var(--border)",
                       borderTop: 0,
                       borderRadius: "0 0 12px 12px",
@@ -746,6 +706,34 @@ export function BuilderView(props: BuilderProps) {
                           })
                         }
                       />
+
+                      {/* Harvest motion layer — visual only, pointer-events:none, so the
+                          interactive overlay buttons below stay fully clickable. Container mode
+                          only: the selected result pulses once; the rest of the matched set
+                          fades/reveals in, staggered. */}
+                      {props.imageSize && props.pickMode === "container" && !showCandidates && props.selectorResult
+                        ? [...matchedNodeIds]
+                            .filter((id) => id !== props.selectedNode?.nodeId)
+                            .map((id, i) => {
+                              const n = domNodeById.get(id);
+                              if (!n) return null;
+                              return (
+                                <AnimatedResultOutline key={id} variant="matched" index={i} geometry={overlayGeometry(n)} />
+                              );
+                            })
+                        : null}
+                      {props.imageSize && props.pickMode === "container" && !showCandidates && props.selectedNode ? (
+                        <AnimatedResultOutline
+                          key={`selected-${props.selectedNode.nodeId}`}
+                          variant="selected"
+                          label="1"
+                          geometry={overlayGeometry(props.selectedNode)}
+                        />
+                      ) : null}
+
+                      {/* One-shot seed burst on preview success. */}
+                      <SeedBurst active={showSeedBurst} />
+
                       {props.imageSize && !showCandidates
                         ? overlayNodes.map((node) => {
                             const selected =
@@ -755,25 +743,21 @@ export function BuilderView(props: BuilderProps) {
                             // In container mode, persistently outline the whole repeated set
                             // so the user can confirm the selection grabbed every card.
                             const matched = props.pickMode === "container" && matchedNodeIds.has(node.nodeId);
-                            // While refining items, everything already inside a detected item
-                            // is FROZEN: shown but not interactive, so only genuinely-missed
-                            // items (outside every card) invite a click. (ADR 0009 follow-up.)
-                            const frozen =
-                              props.pickMode === "container" &&
-                              !!props.selectorResult &&
-                              matchedContainerIdOf(node) !== null;
-
-                            // Devtools-style: boxes are invisible until hovered. Selected and
-                            // matched nodes stay visible so the current state is always readable.
+                            // Devtools-style: boxes are invisible until hovered. In CONTAINER
+                            // mode the (visual-only) animated outline layer owns the selected
+                            // + matched outlines so they can pulse/fade — the button keeps only
+                            // hover feedback there to avoid drawing each outline twice. Field
+                            // mode is unchanged (its selection highlight stays on the button).
+                            const containerMode = props.pickMode === "container";
                             let background = "transparent";
                             let border = "1.4px solid transparent";
-                            if (selected) {
-                              background = "rgba(91,91,214,0.30)";
+                            if (selected && !containerMode) {
+                              background = "rgba(0,0,0,0.14)";
                               border = "1.4px solid var(--accent)";
-                            } else if (hovered && !frozen) {
-                              background = "rgba(37,99,235,0.16)";
-                              border = "1.6px solid var(--info)";
-                            } else if (matched) {
+                            } else if (hovered) {
+                              background = "rgba(0,0,0,0.07)";
+                              border = "1.6px solid var(--accent)";
+                            } else if (matched && !containerMode) {
                               border = "1.4px dashed var(--success)";
                             }
 
@@ -801,12 +785,12 @@ export function BuilderView(props: BuilderProps) {
                                   background,
                                   border,
                                   borderRadius: 4,
-                                  cursor: frozen ? "default" : "pointer",
+                                  cursor: "pointer",
                                   padding: 0,
                                   transition: "background 80ms ease, border-color 80ms ease"
                                 }}
                               >
-                                {hovered && !selected && !frozen ? (
+                                {hovered && !selected ? (
                                   <span
                                     style={{
                                       position: "absolute",
@@ -845,10 +829,10 @@ export function BuilderView(props: BuilderProps) {
                             let background = "transparent";
                             let border = "1.4px solid transparent";
                             if (selected) {
-                              background = "rgba(20,184,166,0.28)";
+                              background = "rgba(0,0,0,0.14)";
                               border = "1.6px solid var(--accent)";
                             } else if (hovered) {
-                              background = "rgba(20,184,166,0.20)";
+                              background = "rgba(0,0,0,0.08)";
                               border = "1.6px solid var(--accent)";
                             } else if (inGroup) {
                               border = "1.4px dashed var(--accent)";
@@ -991,7 +975,7 @@ export function BuilderView(props: BuilderProps) {
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
-                      background: "white",
+                      background: "var(--surface)",
                       border: "1px solid var(--border)",
                       borderRadius: 10,
                       fontSize: 12,
@@ -1005,15 +989,13 @@ export function BuilderView(props: BuilderProps) {
                         <>
                           Single page detected — hover any element and click the{" "}
                           <strong style={{ color: "var(--text-primary)" }}>details to collect</strong> (title,
-                          price, etc.). Use <strong style={{ color: "var(--text-primary)" }}>Advanced</strong> for
-                          manual selection.
+                          price, etc.).
                         </>
                       ) : showCandidates ? (
                         <>
                           Found <strong style={{ color: "var(--text-primary)" }}>{candidates.length}</strong>{" "}
                           likely items — hover to highlight, click one example, then choose the{" "}
-                          <strong style={{ color: "var(--text-primary)" }}>details</strong> to collect. Use{" "}
-                          <strong style={{ color: "var(--text-primary)" }}>Advanced</strong> for manual selection.
+                          <strong style={{ color: "var(--text-primary)" }}>details</strong> to collect.
                         </>
                       ) : (
                         <>
@@ -1110,16 +1092,19 @@ export function BuilderView(props: BuilderProps) {
                 </div>
               )
             ) : (
-              <div style={{ display: "grid", placeItems: "center", padding: 80 }}>
-                <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Screenshot pending…</p>
-              </div>
+              <BuilderScreenshotLoading />
             )
           ) : (
             <div style={{ display: "grid", placeItems: "center", padding: 60 }}>
               <Card className="card-pad" style={{ maxWidth: 520, textAlign: "center" }}>
                 <Badge tone="accent" dot>
-                  Recipe Builder
+                  Recipe builder
                 </Badge>
+                <HarvestArt
+                  src={HARVEST_ART.emptyStateGrow}
+                  size={116}
+                  style={{ margin: "2px auto 0" }}
+                />
                 <h2
                   style={{
                     margin: "12px 0 8px",
@@ -1140,14 +1125,43 @@ export function BuilderView(props: BuilderProps) {
 
         {/* Inspector */}
         <aside
+          className="builder-inspector-pane"
           style={{
-            background: "white",
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
             overflow: "auto"
           }}
         >
+          {/* Page mode + pick controls (moved out of the URL bar, ADR 0011 follow-up): a small
+              box above the Item pattern section. List/Single always; Item/Details for lists. */}
+          {props.pageSession ? (
+            <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Page
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <Segmented<"list" | "single">
+                  value={props.recipeShape}
+                  onChange={(v) => props.onShapeChange(v)}
+                  options={[
+                    { value: "list", icon: "list", label: "List" },
+                    { value: "single", icon: "file", label: "Single" }
+                  ]}
+                />
+                {props.recipeShape !== "single" ? (
+                  <Segmented<"container" | "field">
+                    value={props.pickMode}
+                    onChange={(v) => props.onPickModeChange(v)}
+                    options={[
+                      { value: "container", icon: "layers", label: "Item" },
+                      { value: "field", icon: "cursor", label: "Details" }
+                    ]}
+                  />
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {props.recipeShape !== "single" ? (
             <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
               <div
@@ -1181,15 +1195,10 @@ export function BuilderView(props: BuilderProps) {
                 <Icon name="layers" size={14} style={{ color: "var(--accent-deep)" }} />
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>
                   {props.selectorResult
-                    ? `Found ${props.selectorResult.matchCount} similar items`
-                    : "Click an example item in the page"}
+                    ? "Item pattern selected"
+                    : "Click one result to teach the pattern"}
                 </span>
               </div>
-              {/* Teach-by-example refine (ADR 0009): no selector shown — the user grows the
-                  selection by clicking more items, never by editing code. */}
-              {/* Teach-by-example refine (ADR 0009). Adding missed items only works in Item
-                  mode, but the first pick auto-advances to Details — so when in field mode we
-                  offer a button to come back; in container mode we tell them to click + Done. */}
               {props.selectorResult ? (
                 props.pickMode === "field" ? (
                   <button
@@ -1197,26 +1206,17 @@ export function BuilderView(props: BuilderProps) {
                     onClick={() => props.onPickModeChange("container")}
                     style={LINK_BUTTON_STYLE}
                   >
-                    Missed some items? Add them →
+                    Pick a different item →
                   </button>
                 ) : (
                   <div>
                     <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.45 }}>
-                      <strong style={{ color: "var(--text-secondary)" }}>Click any items we missed</strong> on the
-                      page to include them.
+                      Click another item on the page to replace the current pattern.
                     </p>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
                       <Button variant="secondary" size="sm" icon="check" onClick={() => props.onPickModeChange("field")}>
                         Done
                       </Button>
-                      {props.containerExampleIds.length > 1 ? (
-                        <>
-                          <Badge tone="outline">{props.containerExampleIds.length} examples</Badge>
-                          <button type="button" onClick={props.onResetItemExamples} style={LINK_BUTTON_STYLE}>
-                            Start over
-                          </button>
-                        </>
-                      ) : null}
                     </div>
                   </div>
                 )
@@ -1262,6 +1262,9 @@ export function BuilderView(props: BuilderProps) {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <div
                 style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
                   fontSize: 11.5,
                   fontWeight: 600,
                   color: "var(--text-muted)",
@@ -1269,33 +1272,13 @@ export function BuilderView(props: BuilderProps) {
                   letterSpacing: "0.05em"
                 }}
               >
-                Details to collect
+                <HarvestArt src={HARVEST_ART.logo} size={20} />
+                Data to collect
               </div>
-              <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>{props.fields.length} fields</span>
+              <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+                {allCandidates.length > 0 ? `${allCandidates.length} suggested` : `${props.fields.length} fields`}
+              </span>
             </div>
-
-            {/* Plain-language summary (ADR 0009): what will be collected, in words. */}
-            {props.fields.length > 0 ? (
-              <p
-                style={{
-                  fontSize: 12.5,
-                  color: "var(--text-secondary)",
-                  lineHeight: 1.5,
-                  margin: "0 0 12px",
-                  padding: "8px 10px",
-                  background: "var(--surface-soft)",
-                  borderRadius: 7
-                }}
-              >
-                Collecting{" "}
-                <strong style={{ color: "var(--text-primary)" }}>
-                  {props.fields.map((f) => f.name).join(", ")}
-                </strong>{" "}
-                {props.recipeShape === "single"
-                  ? "from this page."
-                  : `from ${props.selectorResult?.matchCount ?? 0} items.`}
-              </p>
-            ) : null}
 
             {/* This item's data (ADR 0009): every value found in the selected card, with a
                 field name. Tick rows to collect them — or click them on the screenshot; both
@@ -1357,56 +1340,68 @@ export function BuilderView(props: BuilderProps) {
                   })()
                 ) : null}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {allCandidates.map((c) => {
-                    const on = selectedKeys.has(c.key);
-                    const focused = c.nodeId === focusedNodeId;
-                    const name = fieldNameOverrides[c.key] ?? c.suggestedName;
-                    return (
-                      <div
-                        key={c.key}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "4px 6px",
-                          borderRadius: 6,
-                          background: focused ? "var(--accent-softer)" : "transparent",
-                          border: focused ? "1px solid var(--accent-soft)" : "1px solid transparent"
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={() => toggleFieldKey(c.key)}
-                          style={{ flexShrink: 0, cursor: "pointer" }}
-                        />
-                        <input
-                          className="input input-sm"
-                          value={name}
-                          onChange={(e) => setFieldNameOverrides((p) => ({ ...p, [c.key]: e.target.value }))}
-                          disabled={!on}
-                          style={{ width: 104, flexShrink: 0, opacity: on ? 1 : 0.5 }}
-                        />
-                        <span
-                          title={c.value}
-                          style={{
-                            flex: 1,
-                            minWidth: 0,
-                            fontSize: 12,
-                            color: "var(--text-secondary)",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap"
-                          }}
-                        >
-                          {c.value}
-                        </span>
-                        <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-muted)", flexShrink: 0 }}>
-                          {c.label}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  <AnimatePresence initial={false}>
+                    {allCandidates.map((c) => {
+                      const on = selectedKeys.has(c.key);
+                      const focused = c.nodeId === focusedNodeId;
+                      // Display-only: if the auto name is ugly and the user hasn't renamed it,
+                      // show an empty field with a "Rename this field" prompt. The committed
+                      // name still falls back to the real suggestedName (keys never change).
+                      const overridden = fieldNameOverrides[c.key] !== undefined;
+                      const uglyName = isUglyGeneratedName(c.suggestedName);
+                      const name = overridden ? fieldNameOverrides[c.key] : uglyName ? "" : c.suggestedName;
+                      return (
+                        <AnimatedFieldRow key={c.key}>
+                          <div className={cx("field-pick-row", focused && "field-pick-row-focused")}>
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => toggleFieldKey(c.key)}
+                              style={{ flexShrink: 0, cursor: "pointer" }}
+                            />
+                            <span className="field-pick-icon" aria-hidden="true">
+                              <HarvestArt src={fieldArtFor(c.extract)} size={18} />
+                            </span>
+                            <input
+                              className="input input-sm"
+                              value={name}
+                              placeholder={uglyName && !overridden ? "Rename this field" : undefined}
+                              onChange={(e) => setFieldNameOverrides((p) => ({ ...p, [c.key]: e.target.value }))}
+                              disabled={!on}
+                              style={{ width: 92, flexShrink: 0, opacity: on ? 1 : 0.5 }}
+                            />
+                            <span
+                              title={c.value}
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                fontSize: 12,
+                                color: "var(--text-secondary)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap"
+                              }}
+                            >
+                              {c.value}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 10.5,
+                                fontWeight: 600,
+                                color: TYPE_COLORS[c.extract].fg,
+                                background: TYPE_COLORS[c.extract].bg,
+                                padding: "1px 6px",
+                                borderRadius: 4,
+                                flexShrink: 0
+                              }}
+                            >
+                              {c.label}
+                            </span>
+                          </div>
+                        </AnimatedFieldRow>
+                      );
+                    })}
+                  </AnimatePresence>
                 </div>
               </Card>
             ) : null}
@@ -1439,17 +1434,17 @@ export function BuilderView(props: BuilderProps) {
             <div
               style={{
                 marginTop: 16,
-                padding: "10px 12px",
-                background: "var(--accent-softer)",
-                borderRadius: 9,
+                padding: "12px 14px",
+                background: "var(--sprout-soft)",
+                borderRadius: 12,
                 fontSize: 12,
                 color: "var(--text-secondary)",
                 display: "flex",
-                alignItems: "flex-start",
-                gap: 8
+                alignItems: "center",
+                gap: 12
               }}
             >
-              <Icon name="wand" size={13} style={{ color: "var(--accent-deep)", flexShrink: 0, marginTop: 2 }} />
+              <HarvestArt src={HARVEST_ART.dataRows} width={54} height={40} />
               <div>
                 <strong style={{ color: "var(--text-primary)" }}>Tip:</strong>{" "}
                 {props.recipeShape === "single"
@@ -1461,12 +1456,10 @@ export function BuilderView(props: BuilderProps) {
         </aside>
       </div>
 
-      {/* BOTTOM PANEL — always available: Preview records table, Changes, and Run logs.
-          (The right panel's compact data is additive; this full panel is not gated on a run.) */}
+      {/* BOTTOM PANEL — builder-only preview from the screenshot snapshot. Live runs live on Runs. */}
       <div
+        className="builder-bottom-panel"
         style={{
-          borderTop: "1px solid var(--border)",
-          background: "white",
           flexShrink: 0,
           maxHeight: 360,
           display: "flex",
@@ -1474,55 +1467,20 @@ export function BuilderView(props: BuilderProps) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid var(--divider)" }}>
-          <Tabs
-            value={bottomTab}
-            onChange={setBottomTab}
-            tabs={[
-              { value: "preview", label: "Preview records", count: previewRows.length },
-              {
-                value: "changes",
-                label: "Changes",
-                count: props.run
-                  ? `+${props.run.changes.new.length} / ${props.run.changes.changed.length} / ${props.run.changes.removed.length}`
-                  : "—"
-              },
-              { value: "logs", label: "Run logs" }
-            ]}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, height: 44 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+              Preview records
+            </span>
+            <Badge tone="outline">{previewRows.length} rows</Badge>
+          </div>
           <div style={{ flex: 1 }} />
-          {bottomTab === "preview" && props.run ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
-                {props.run.id.slice(0, 8)} · {props.run.records.length} records ·{" "}
-                {props.run.startedAt && props.run.finishedAt
-                  ? fmtDuration((new Date(props.run.finishedAt).getTime() - new Date(props.run.startedAt).getTime()) / 1000)
-                  : "—"}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="csv"
-                disabled={props.run.status !== "completed" || props.exportBusy === "csv"}
-                onClick={() => props.onDownloadExport(props.run!.id, "csv")}
-              >
-                CSV
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="json"
-                disabled={props.run.status !== "completed" || props.exportBusy === "json"}
-                onClick={() => props.onDownloadExport(props.run!.id, "json")}
-              >
-                JSON
-              </Button>
-            </div>
-          ) : null}
         </div>
 
         <div style={{ overflow: "auto", flex: 1 }}>
-          {bottomTab === "preview" ? (
-            previewRows.length > 0 ? (
+          {props.previewBusy ? (
+            <BuilderPreviewLoading />
+          ) : previewRows.length > 0 ? (
+            <AnimatedPreviewDrawer open>
               <table className="tbl" style={{ tableLayout: "auto" }}>
                 <thead>
                   <tr>
@@ -1560,8 +1518,8 @@ export function BuilderView(props: BuilderProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {previewRows.slice(0, 20).map((row, i) => (
-                    <tr key={i}>
+                  {previewRows.map((row, i) => (
+                    <AnimatedPreviewRow key={i} index={i}>
                       {props.fields.map((f) => (
                         <td
                           key={f.name}
@@ -1581,161 +1539,62 @@ export function BuilderView(props: BuilderProps) {
                           </span>
                         </td>
                       ))}
-                    </tr>
+                    </AnimatedPreviewRow>
                   ))}
                 </tbody>
               </table>
-            ) : (
-              <EmptyState
-                title="No preview records yet"
-                description="Pick a container, map at least one field, and click Preview records."
-              />
-            )
-          ) : null}
-
-          {bottomTab === "changes" && props.run ? (
-            <div style={{ padding: "12px 18px" }}>
-              <div style={{ display: "flex", gap: 14, marginBottom: 14 }}>
-                <ChangeStat label="New" count={props.run.changes.new.length} color="success" />
-                <ChangeStat label="Changed" count={props.run.changes.changed.length} color="warning" />
-                <ChangeStat label="Removed" count={props.run.changes.removed.length} color="danger" />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {(["new", "changed", "removed"] as const).flatMap((kind) =>
-                  props.run!.changes[kind].slice(0, 8).map((event) => (
-                    <ChangeRow key={event.id} kind={kind} event={event} />
-                  ))
-                )}
-                {props.run.status === "completed" &&
-                props.run.changes.new.length + props.run.changes.changed.length + props.run.changes.removed.length === 0 ? (
-                  <p style={{ fontSize: 13, color: "var(--text-muted)" }}>No changes since the previous run.</p>
-                ) : null}
-              </div>
+            </AnimatedPreviewDrawer>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "48px 24px", textAlign: "center" }}>
+              <HarvestArt src={HARVEST_ART.emptyCard} size={104} />
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Your harvest will grow here</h3>
+              <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", maxWidth: 320, lineHeight: 1.5 }}>
+                Pick an item, choose the values to collect, then click Preview records.
+              </p>
             </div>
-          ) : null}
-
-          {bottomTab === "logs" && props.run ? (
-            <div
-              style={{
-                padding: "10px 14px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 4
-              }}
-            >
-              <LogLine at={props.run.startedAt} level="info" text={`Run started · recipe ${props.run.recipeId.slice(0, 8)}`} />
-              <LogLine at={props.run.startedAt} level="info" text={`${props.run.records.length} record(s) extracted`} />
-              <LogLine
-                at={props.run.finishedAt}
-                level="info"
-                text={`Diff: +${props.run.changes.new.length} new · ${props.run.changes.changed.length} changed · ${props.run.changes.removed.length} removed`}
-              />
-              {props.run.errorMessage ? (
-                <LogLine at={props.run.finishedAt} level="error" text={props.run.errorMessage} />
-              ) : null}
-              {props.run.status === "completed" ? (
-                <LogLine at={props.run.finishedAt} level="ok" text="Run completed" />
-              ) : props.run.status === "failed" ? (
-                <LogLine at={props.run.finishedAt} level="error" text="Run failed" />
-              ) : (
-                <LogLine at={null} level="info" text={`Status: ${props.run.status}`} />
-              )}
-            </div>
-          ) : null}
-
-          {bottomTab === "changes" && !props.run ? (
-            <EmptyState title="Run the recipe first" description="Changes will appear after the first run completes." />
-          ) : null}
-
-          {bottomTab === "logs" && !props.run ? (
-            <EmptyState title="No run logs yet" description="Save the recipe and run it once to see logs here." />
-          ) : null}
+          )}
         </div>
-
-        {props.run ? (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "8px 16px",
-              borderTop: "1px solid var(--divider)"
-            }}
-          >
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Run{" "}
-              <span className="mono" style={{ color: "var(--text-primary)" }}>
-                {props.run.id.slice(0, 8)}
-              </span>
-              <StatusBadge status={props.run.status} />
-            </span>
-          </div>
-        ) : null}
       </div>
     </div>
   );
 }
 
-function ChangeStat({ label, count, color }: { label: string; count: number; color: "success" | "warning" | "danger" }) {
-  const bg = { success: "var(--success-bg)", warning: "var(--warning-bg)", danger: "var(--danger-bg)" }[color];
-  const fg = { success: "var(--success-fg)", warning: "var(--warning-fg)", danger: "var(--danger-fg)" }[color];
+function BuilderScreenshotLoading({ compact = false }: { compact?: boolean }) {
+  const reduceMotion = useReducedMotion();
   return (
-    <div
-      style={{
-        padding: "10px 14px",
-        background: bg,
-        color: fg,
-        borderRadius: 9,
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        minWidth: 130
-      }}
+    <motion.div
+      className={cx("builder-loading-card", compact && "builder-loading-card-compact")}
+      initial={reduceMotion ? false : { opacity: 0, y: 12, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
+      transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 240, damping: 24 }}
     >
-      <div style={{ fontSize: 22, fontWeight: 600, lineHeight: 1, fontFamily: "var(--font-mono)" }}>{count}</div>
-      <div style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
-    </div>
+      <HarvestArt src={HARVEST_ART.collecting} width={compact ? 74 : 128} height={compact ? 54 : 94} />
+      <div>
+        <div className="builder-loading-title">Loading screenshot</div>
+        <div className="builder-loading-copy">Capturing the page and preparing clickable areas.</div>
+      </div>
+    </motion.div>
   );
 }
 
-function LogLine({
-  level,
-  text,
-  at
-}: {
-  level: "info" | "ok" | "warn" | "error";
-  text: string;
-  // Real event time from the run; null renders an em dash rather than a fabricated "now".
-  at?: string | null;
-}) {
-  const colors: Record<string, { bg: string; fg: string }> = {
-    info: { bg: "var(--accent-soft)", fg: "var(--accent-deep)" },
-    ok: { bg: "var(--success-bg)", fg: "var(--success-fg)" },
-    warn: { bg: "var(--warning-bg)", fg: "var(--warning-fg)" },
-    error: { bg: "var(--danger-bg)", fg: "var(--danger-fg)" }
-  };
+function BuilderPreviewLoading() {
+  const reduceMotion = useReducedMotion();
   return (
-    <div className={cx("flex")} style={{ display: "flex", gap: 12 }}>
-      <span style={{ color: "var(--text-faint)" }}>{at ? new Date(at).toLocaleTimeString() : "—"}</span>
-      <span
-        style={{
-          color: colors[level].fg,
-          background: colors[level].bg,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          fontSize: 10.5,
-          alignSelf: "center",
-          padding: "0 6px",
-          borderRadius: 3
-        }}
-      >
-        {level}
-      </span>
-      <span>{text}</span>
-    </div>
+    <motion.div
+      className="builder-preview-loading"
+      initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+      transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 240, damping: 26 }}
+      aria-live="polite"
+    >
+      <HarvestArt src={HARVEST_ART.dataFlowToTable} width={148} height={92} />
+      <div>
+        <div className="builder-loading-title">Building preview table</div>
+        <div className="builder-loading-copy">Collecting the selected values from matching records.</div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -1779,83 +1638,6 @@ function AccessBlockNotice({ block, url }: { block: AccessBlock; url: string }) 
           </div>
         </div>
       </Card>
-    </div>
-  );
-}
-
-function ChangeRow({ kind, event }: { kind: "new" | "changed" | "removed"; event: ChangeEvent }) {
-  // "changed" rows show only the fields that actually differ, as old → new.
-  const diffs =
-    kind === "changed" && event.oldData && event.newData
-      ? Object.keys(event.newData).filter(
-          (k) => formatValue(event.newData![k]) !== formatValue(event.oldData![k])
-        )
-      : [];
-  const snapshot = kind === "new" ? event.newData : kind === "removed" ? event.oldData : null;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        padding: "8px 12px",
-        border: "1px solid var(--divider)",
-        borderRadius: 8,
-        background: "white"
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Badge tone={kind === "new" ? "success" : kind === "changed" ? "warning" : "danger"}>{kind}</Badge>
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 550, color: "var(--text-primary)", wordBreak: "break-all" }}>
-          {event.recordKey}
-        </span>
-      </div>
-
-      {diffs.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          {diffs.map((key) => (
-            <div key={key} style={{ display: "flex", alignItems: "baseline", gap: 6, fontSize: 12, flexWrap: "wrap" }}>
-              <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>{key}</span>
-              <span
-                style={{
-                  color: "var(--danger-fg)",
-                  textDecoration: "line-through",
-                  maxWidth: 280,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap"
-                }}
-              >
-                {formatValue(event.oldData?.[key])}
-              </span>
-              <Icon name="arrowRight" size={11} style={{ color: "var(--text-faint)" }} />
-              <span
-                style={{
-                  color: "var(--success-fg)",
-                  maxWidth: 280,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap"
-                }}
-              >
-                {formatValue(event.newData?.[key])}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : snapshot ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px" }}>
-          {Object.entries(snapshot)
-            .slice(0, 4)
-            .map(([key, value]) => (
-              <span key={key} style={{ fontSize: 11.5, color: "var(--text-secondary)" }}>
-                <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{key}:</span>{" "}
-                <span style={{ color: "var(--text-primary)" }}>{formatValue(value).slice(0, 60)}</span>
-              </span>
-            ))}
-        </div>
-      ) : null}
     </div>
   );
 }

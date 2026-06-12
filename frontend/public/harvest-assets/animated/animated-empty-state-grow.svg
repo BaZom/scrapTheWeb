@@ -1,0 +1,17 @@
+<svg width="320" height="220" viewBox="0 0 320 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Empty state growing card animation">
+  <style>
+    .card { animation: cardIn 2.2s ease-in-out infinite; transform-origin: 160px 110px; }
+    .sprout { stroke-dasharray: 150; stroke-dashoffset: 150; animation: draw 2.2s ease-in-out infinite; }
+    .line { animation: lineIn 2.2s ease-in-out infinite; transform-origin: left; }
+    @keyframes cardIn { 0% { opacity:.55; transform: scale(.985); } 30%,100% { opacity:1; transform: scale(1); } }
+    @keyframes draw { 0%,20% { stroke-dashoffset:150; } 70%,100% { stroke-dashoffset:0; } }
+    @keyframes lineIn { 0%,25% { opacity:0; transform: scaleX(.5); } 60%,100% { opacity:.45; transform: scaleX(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      .card, .sprout, .line { animation:none; stroke-dashoffset:0; opacity:.8; }
+    }
+  </style>
+  <rect class="card" x="50" y="34" width="220" height="152" rx="24" stroke="currentColor" stroke-width="2"/>
+  <path class="line" d="M94 66H226M110 160H210" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <ellipse cx="160" cy="142" rx="34" ry="7" fill="currentColor" opacity=".12"/>
+  <path class="sprout" d="M160 138C160 121 160 103 160 82M160 111C140 109 135 91 153 89C158 96 160 103 160 111M160 105C181 100 186 80 168 79C162 87 160 96 160 105" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

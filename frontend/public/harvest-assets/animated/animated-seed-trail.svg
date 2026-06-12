@@ -1,0 +1,25 @@
+<svg width="420" height="140" viewBox="0 0 420 140" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated seed trail">
+  <style>
+    .trail { stroke-dasharray: 4 10; animation: dash 1.7s linear infinite; opacity: .35; }
+    .seed { opacity: 0; animation: fly 1.8s ease-in-out infinite; transform-origin: center; }
+    .s2 { animation-delay: .14s; }
+    .s3 { animation-delay: .28s; }
+    .s4 { animation-delay: .42s; }
+    .s5 { animation-delay: .56s; }
+    @keyframes dash { to { stroke-dashoffset: -42; } }
+    @keyframes fly {
+      0% { opacity: 0; transform: translate(0, 0) scale(.7); }
+      20% { opacity: .9; }
+      100% { opacity: 0; transform: translate(130px, -54px) scale(1) rotate(18deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .trail, .seed { animation: none; opacity: .45; }
+    }
+  </style>
+  <path class="trail" d="M24 96 C92 18 180 124 252 66 C302 25 350 52 396 24" stroke="currentColor" stroke-width="1.7"/>
+  <ellipse class="seed" cx="72" cy="82" rx="4" ry="6" fill="currentColor"/>
+  <ellipse class="seed s2" cx="116" cy="56" rx="3" ry="5" fill="#B99A6B"/>
+  <ellipse class="seed s3" cx="168" cy="72" rx="4" ry="6" fill="currentColor"/>
+  <ellipse class="seed s4" cx="222" cy="72" rx="3" ry="5" fill="#B99A6B"/>
+  <ellipse class="seed s5" cx="278" cy="48" rx="4" ry="6" fill="currentColor"/>
+</svg>

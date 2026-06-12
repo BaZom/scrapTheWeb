@@ -1,4 +1,4 @@
-from app.selector_generator import generate_selector, infer_selector, preview_from_snapshot
+from app.selector_generator import generate_selector, preview_from_snapshot
 
 
 def _node(node_id: str, **overrides: object) -> dict[str, object]:
@@ -101,42 +101,11 @@ def _mixed_grid() -> list[dict[str, object]]:
     return nodes
 
 
-def test_infer_broadens_to_cover_both_example_kinds() -> None:
-    # One example only matches its own class (3 cards); adding a second-kind example must
-    # broaden to a selector covering both — here the shared <article> tag (all 5).
-    nodes = _mixed_grid()
-    assert generate_selector(nodes, "prod-0", "container")["matchCount"] == 3
-    result = infer_selector(nodes, ["prod-0", "feat-0"], "container")
-    assert result["strategy"] == "inferred"
-    matched = set(result["matchedNodeIds"])
-    assert {"prod-0", "feat-0"}.issubset(matched)
-    assert result["matchCount"] == 5
-
-
-def test_infer_single_example_matches_generate() -> None:
-    nodes = _build_grid(3)
-    inferred = infer_selector(nodes, ["card-0"], "container")
-    generated = generate_selector(nodes, "card-0", "container")
-    assert set(inferred["matchedNodeIds"]) == set(generated["matchedNodeIds"])
-
-
-def test_infer_relative_matches_cells_across_all_containers() -> None:
-    nodes = _build_grid(3)
-    for i in range(3):
-        nodes.append(
-            _node(f"title-{i}", tag="h3", text="Title", parentNodeId=f"card-{i}", classes=["title"])
-        )
-    result = infer_selector(
-        nodes, ["title-0", "title-1"], "node", container_selector="article.product_pod"
-    )
-    assert set(result["matchedNodeIds"]) == {"title-0", "title-1", "title-2"}
-
-
 def test_preview_from_snapshot_extracts_all_items_from_the_snapshot() -> None:
-    # Build + verify a recipe straight from domNodes — no HTML parse (ADR 0009). Three cards,
-    # each with a title (text) and a link (href); preview returns one row per card.
-    nodes = _build_grid(3)
-    for i in range(3):
+    # Build + verify a recipe straight from domNodes — no HTML parse (ADR 0009). More than
+    # twenty cards catches accidental fixed preview caps; preview returns one row per card.
+    nodes = _build_grid(27)
+    for i in range(27):
         nodes.append(
             _node(
                 f"title-{i}",
@@ -162,9 +131,31 @@ def test_preview_from_snapshot_extracts_all_items_from_the_snapshot() -> None:
     ]
     result = preview_from_snapshot(nodes, "article.product_pod", picks)
     assert [f["name"] for f in result["fields"]] == ["title", "link"]
-    assert len(result["rows"]) == 3
+    assert len(result["rows"]) == 27
     assert result["rows"][1]["title"] == "Title 1"
-    assert result["rows"][2]["link"] == "/p/2"
+    assert result["rows"][26]["link"] == "/p/26"
+
+
+def test_relative_selector_prefers_full_coverage_over_partial_stable_class() -> None:
+    nodes = _build_grid(27)
+    for i in range(27):
+        nodes.append(
+            _node(
+                f"title-{i}",
+                tag="h3",
+                text=f"Title {i}",
+                parentNodeId=f"card-{i}",
+                classes=["promo-title"] if i < 6 else [],
+            )
+        )
+    result = preview_from_snapshot(
+        nodes,
+        "article.product_pod",
+        [{"nodeId": "title-0", "extract": "text", "name": "title"}],
+    )
+    assert len(result["rows"]) == 27
+    assert all(row["title"] for row in result["rows"])
+    assert result["rows"][26]["title"] == "Title 26"
 
 
 def test_preview_from_snapshot_single_page_is_one_row() -> None:

@@ -1,4 +1,11 @@
+<p align="center">
+  <img src="docs/skrowt-logo.png" alt="Skrowt" width="440" />
+</p>
+
 # ScrapTheWeb
+
+> Product brand: **Skrowt** — _turn websites into structured data_.
+> (The codebase, repository, and APIs keep the internal name ScrapTheWeb.)
 
 ScrapTheWeb is a production-oriented visual recipe builder for extracting
 structured data from public listing pages. A user signs in, renders a page with

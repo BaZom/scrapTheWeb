@@ -1,0 +1,10 @@
+<svg width="220" height="150" viewBox="0 0 220 150" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="preview table harvest ready">
+  <rect x="24" y="30" width="172" height="88" rx="12" stroke="currentColor" stroke-width="2"/>
+  <path d="M24 54H196M24 76H196M24 98H196" stroke="currentColor" stroke-width="1.5" opacity=".35"/>
+  <path d="M70 30V118M125 30V118" stroke="currentColor" stroke-width="1.5" opacity=".35"/>
+  <path d="M40 43H58M82 43H105M139 43H178M40 66H55M82 66H112M139 66H170M40 88H60M82 88H99M139 88H182M40 110H51M82 110H118M139 110H165" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <ellipse cx="110" cy="132" rx="24" ry="5" fill="currentColor" opacity=".14"/>
+  <path d="M110 130C110 121 110 112 110 101" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M110 117C101 116 98 108 106 107C109 110 110 113 110 117Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M110 114C119 112 122 104 114 104C111 107 110 111 110 114Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

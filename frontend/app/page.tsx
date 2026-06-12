@@ -18,7 +18,6 @@ import {
   downloadRunExport,
   fetchScreenshot,
   generateSelector,
-  inferSelector,
   getDashboard,
   getRun,
   streamRunEvents,
@@ -43,17 +42,32 @@ import { AppShell } from "./components/app-shell";
 import { AuthView, type AuthMode } from "./components/auth-view";
 import { BuilderView } from "./components/builder-view";
 import {
+  type AppearanceSettings,
   DashboardView,
   ExportsView,
   MonitorDetailView,
   MonitorsView,
   RecipesView,
+  RunTestView,
   RunsView,
   SettingsView
 } from "./components/product-screens";
 import type { AppView } from "./data/product-ui";
 
 const storageKey = "scraptheweb.auth";
+const appearanceStorageKey = "scraptheweb.appearance.v1";
+const lightAccent = "#1A1913";
+const darkAccent = "#F4F1E8";
+const lightSprout = "#4F7A43";
+const darkSprout = "#8CAF7B";
+const lightPaper = "#F6F5EF";
+const darkPaper = "#24231F";
+const defaultAppearance: AppearanceSettings = {
+  mode: "light",
+  accentColor: lightAccent,
+  sproutColor: lightSprout,
+  paperColor: lightPaper
+};
 const runTerminalStatuses = new Set(["completed", "failed"]);
 // Builder drafts are ephemeral page sessions today: a refresh threw away all mapping
 // work. We snapshot the in-progress builder here so a reload resumes exactly where the
@@ -65,6 +79,71 @@ type StoredSession = Pick<AuthSession, "access_token" | "refresh_token">;
 // BuilderDraft (the persisted snapshot shape) is defined alongside the reducer so the two
 // can't drift; only the canvas + mapping is stored — transient results and the blob
 // screenshot URL are excluded and the screenshot is re-fetched on restore.
+
+function isHexColor(value: string) {
+  return /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function hexToRgb(hex: string) {
+  const normalized = isHexColor(hex) ? hex.slice(1) : "1A1913";
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16)
+  };
+}
+
+function readableTextOn(hex: string) {
+  const { r, g, b } = hexToRgb(hex);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.58 ? "#11100D" : "#FFFFFF";
+}
+
+function applyAppearance(settings: AppearanceSettings) {
+  const root = document.documentElement;
+  const fallback = settings.mode === "dark"
+    ? { accentColor: darkAccent, sproutColor: darkSprout, paperColor: darkPaper }
+    : defaultAppearance;
+  const storedAccent =
+    settings.mode === "dark" && settings.accentColor.toLowerCase() === lightAccent.toLowerCase()
+      ? darkAccent
+      : settings.mode === "light" && settings.accentColor.toLowerCase() === darkAccent.toLowerCase()
+        ? lightAccent
+        : settings.accentColor;
+  const storedSprout =
+    settings.mode === "dark" && settings.sproutColor.toLowerCase() === lightSprout.toLowerCase()
+      ? darkSprout
+      : settings.mode === "light" && settings.sproutColor.toLowerCase() === darkSprout.toLowerCase()
+        ? lightSprout
+        : settings.sproutColor;
+  const storedPaper =
+    settings.mode === "dark" && settings.paperColor.toLowerCase() === lightPaper.toLowerCase()
+      ? darkPaper
+      : settings.mode === "light" && settings.paperColor.toLowerCase() === darkPaper.toLowerCase()
+        ? lightPaper
+        : settings.paperColor;
+  const accent = isHexColor(storedAccent) ? storedAccent : fallback.accentColor;
+  const sprout = isHexColor(storedSprout) ? storedSprout : fallback.sproutColor;
+  const paper = isHexColor(storedPaper) ? storedPaper : fallback.paperColor;
+
+  root.dataset.theme = settings.mode;
+  root.style.setProperty("--accent", accent);
+  root.style.setProperty("--accent-strong", accent);
+  root.style.setProperty("--accent-deep", accent);
+  root.style.setProperty("--accent-soft", `color-mix(in srgb, ${accent} 14%, var(--surface))`);
+  root.style.setProperty("--accent-softer", `color-mix(in srgb, ${accent} 8%, var(--surface))`);
+  root.style.setProperty("--accent-ring", `color-mix(in srgb, ${accent} 28%, transparent)`);
+  root.style.setProperty("--text-onAccent", readableTextOn(accent));
+
+  root.style.setProperty("--sprout", sprout);
+  root.style.setProperty("--success", sprout);
+  root.style.setProperty("--success-bg", `color-mix(in srgb, ${sprout} 18%, var(--surface))`);
+  root.style.setProperty("--success-fg", sprout);
+
+  root.style.setProperty("--surface-sidebar", paper);
+  root.style.setProperty("--surface-footer", paper);
+  root.style.setProperty("--surface-warm", `color-mix(in srgb, ${paper} 84%, var(--surface))`);
+}
 
 export default function Home() {
   const [mode, setMode] = useState<AuthMode>("signin");
@@ -83,7 +162,6 @@ export default function Home() {
     pageSession,
     selectedNode,
     selectorResult,
-    containerExampleIds,
     recipeShape,
     pickMode,
     fields,
@@ -104,8 +182,11 @@ export default function Home() {
   const [selectorBusy, setSelectorBusy] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [recipeBusy, setRecipeBusy] = useState(false);
-  const [runBusy, setRunBusy] = useState(false);
+  const [runBusyRecipeId, setRunBusyRecipeId] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState<"csv" | "json" | null>(null);
+  const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
+  const [selectedRunRecipeId, setSelectedRunRecipeId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   // Set to a restored draft's sessionId so the screenshot-restore effect knows to
@@ -128,6 +209,22 @@ export default function Home() {
       window.localStorage.removeItem(storageKey);
     }
   }, []);
+
+  // ----- Load and apply appearance preferences -----
+  useEffect(() => {
+    const raw = window.localStorage.getItem(appearanceStorageKey);
+    if (!raw) return;
+    try {
+      setAppearance({ ...defaultAppearance, ...(JSON.parse(raw) as Partial<AppearanceSettings>) });
+    } catch {
+      window.localStorage.removeItem(appearanceStorageKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(appearanceStorageKey, JSON.stringify(appearance));
+    applyAppearance(appearance);
+  }, [appearance]);
 
   // ----- Restore an in-progress builder draft on mount -----
   useEffect(() => {
@@ -454,32 +551,6 @@ export default function Home() {
     }
   }
 
-  // Teach-by-example (ADR 0009): the user clicked another item we missed. Re-infer the item
-  // selector to cover every example so far; the count + outline grow. No CSS surfaced.
-  async function handleAddItemExample(node: DomNode) {
-    if (!session || !pageSession) return;
-    const ids = [...containerExampleIds, node.nodeId];
-    dispatch({ type: "container_example_added", node });
-    setSelectorBusy(true);
-    setError(null);
-    try {
-      const result = await inferSelector(pageSession.sessionId, ids, session.access_token, {
-        mode: "container"
-      });
-      dispatch({ type: "container_selector_inferred", result });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not include that item");
-    } finally {
-      setSelectorBusy(false);
-    }
-  }
-
-  // "Start over" — re-pick from the first example, dropping the extra examples.
-  function handleResetItemExamples() {
-    const first = pageSession?.domNodes.find((n) => n.nodeId === containerExampleIds[0]);
-    if (first) handleNodeSelect(first);
-  }
-
   // Preview records (ADR 0009): the only thing that extracts. ONE call to the snapshot
   // preview — the backend generates each selected field's selector and reads its value from
   // the render snapshot (no S3 fetch, no HTML re-parse), returning all matched rows + the
@@ -523,7 +594,7 @@ export default function Home() {
   }
 
   async function handleSaveRecipe() {
-    if (!session || !selectorResult || fields.length === 0) return;
+    if (!session || !selectorResult || fields.length === 0 || savedRecipe) return;
     const name = recipeName.trim();
     if (!name) {
       setError("Recipe name is required");
@@ -542,6 +613,8 @@ export default function Home() {
       );
       dispatch({ type: "recipe_saved", recipe });
       setRecipes((prev) => [recipe, ...prev.filter((r) => r.id !== recipe.id)]);
+      setSelectedRunRecipeId(recipe.id);
+      setSelectedRunId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Recipe save failed");
     } finally {
@@ -549,10 +622,17 @@ export default function Home() {
     }
   }
 
+  function handleOpenSavedRecipeRunTest() {
+    if (!savedRecipe) return;
+    setSelectedRunRecipeId(savedRecipe.id);
+    setSelectedRunId(null);
+    setActiveView("runTest");
+  }
+
   async function startRecipeRun(recipeId: string) {
     if (!session) return;
-    setRunBusy(true);
     setError(null);
+    setRunBusyRecipeId(recipeId);
     try {
       const recipe = recipes.find((c) => c.id === recipeId);
       if (recipe) dispatch({ type: "recipe_saved", recipe });
@@ -560,17 +640,14 @@ export default function Home() {
       const firstRead = await getRun(created.runId, session.access_token);
       dispatch({ type: "run_updated", run: firstRead });
       setRuns((prev) => [firstRead, ...prev.filter((r) => r.id !== firstRead.id)]);
-      setActiveView("builder");
+      setSelectedRunRecipeId(recipeId);
+      setSelectedRunId(firstRead.id);
+      setActiveView("runTest");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Recipe run failed");
     } finally {
-      setRunBusy(false);
+      setRunBusyRecipeId(null);
     }
-  }
-
-  async function handleRunRecipe() {
-    if (!savedRecipe) return;
-    await startRecipeRun(savedRecipe.id);
   }
 
   async function handleDownloadExport(runId: string, format: "csv" | "json") {
@@ -622,20 +699,13 @@ export default function Home() {
       savedRecipe,
       recipeBusy,
       onSaveRecipe: handleSaveRecipe,
-      run,
-      runBusy,
-      onRunRecipe: handleRunRecipe,
-      exportBusy,
-      onDownloadExport: handleDownloadExport,
+      onOpenRunTest: handleOpenSavedRecipeRunTest,
       imageSize,
       onImageLoad: (size: { width: number; height: number }) =>
         dispatch({ type: "image_loaded", size }),
       renderBusy,
       error,
-      onNodeSelect: handleNodeSelect,
-      containerExampleIds,
-      onAddItemExample: handleAddItemExample,
-      onResetItemExamples: handleResetItemExamples
+      onNodeSelect: handleNodeSelect
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -645,7 +715,6 @@ export default function Home() {
       selectedNode,
       selectorResult,
       selectorBusy,
-      containerExampleIds,
       recipeShape,
       pickMode,
       pickerView,
@@ -656,9 +725,6 @@ export default function Home() {
       recipeName,
       savedRecipe,
       recipeBusy,
-      run,
-      runBusy,
-      exportBusy,
       imageSize,
       renderBusy,
       error
@@ -724,16 +790,39 @@ export default function Home() {
         />
       ) : null}
       {activeView === "builder" ? <BuilderView {...builderProps} /> : null}
+      {activeView === "runTest" ? (
+        <RunTestView
+          error={workspaceError}
+          exportBusy={exportBusy}
+          loading={workspaceBusy}
+          onDownloadExport={(id, format) => void handleDownloadExport(id, format)}
+          onOpenBuilder={() => setActiveView("builder")}
+          onOpenRun={(selected) => {
+            dispatch({ type: "run_updated", run: selected });
+            setSelectedRunId(selected.id);
+          }}
+          onRunRecipe={(id) => void startRecipeRun(id)}
+          onSelectRecipe={setSelectedRunRecipeId}
+          recipes={recipes}
+          runBusyRecipeId={runBusyRecipeId}
+          runs={runs}
+          selectedRecipeId={selectedRunRecipeId}
+          selectedRunId={selectedRunId}
+        />
+      ) : null}
       {activeView === "runs" ? (
         <RunsView
           error={workspaceError}
+          exportBusy={exportBusy}
           loading={workspaceBusy}
           onOpenRun={(selected) => {
             dispatch({ type: "run_updated", run: selected });
-            setActiveView("builder");
+            setSelectedRunId(selected.id);
           }}
+          onDownloadExport={(id, format) => void handleDownloadExport(id, format)}
           recipes={recipes}
           runs={runs}
+          selectedRunId={selectedRunId}
         />
       ) : null}
       {activeView === "exports" ? (
@@ -748,8 +837,11 @@ export default function Home() {
       ) : null}
       {activeView === "settings" ? (
         <SettingsView
+          appearance={appearance}
           dashboard={dashboard}
           accessToken={session.access_token}
+          onAppearanceChange={setAppearance}
+          onAppearanceReset={() => setAppearance(defaultAppearance)}
           onVerified={() =>
             setDashboard((current) =>
               current ? { ...current, user: { ...current.user, email_verified: true } } : current

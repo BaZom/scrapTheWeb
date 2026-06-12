@@ -1,0 +1,12 @@
+<svg width="160" height="120" viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="structured data rows with sprout">
+  <rect x="20" y="22" width="120" height="76" rx="10" stroke="currentColor" stroke-width="2"/>
+  <path d="M20 44H140M20 62H140M20 80H140" stroke="currentColor" stroke-width="1.5" opacity=".35"/>
+  <path d="M48 33H86M48 53H103M48 71H91M48 89H112" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="34" cy="33" r="3" fill="currentColor"/>
+  <circle cx="34" cy="53" r="3" fill="currentColor" opacity=".55"/>
+  <circle cx="34" cy="71" r="3" fill="currentColor" opacity=".55"/>
+  <circle cx="34" cy="89" r="3" fill="currentColor" opacity=".55"/>
+  <path d="M122 95C122 87 122 79 122 70" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <path d="M122 82C115 81 112 75 119 74C121 76 122 79 122 82Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M122 80C130 78 132 71 125 71C123 74 122 77 122 80Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

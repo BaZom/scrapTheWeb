@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type CSSProperties, type ReactNode } from "react";
 
 import type { Dashboard } from "@/lib/api";
 
@@ -28,6 +30,7 @@ export function AppShell({
   onRunAll: () => void;
   onViewChange: (view: AppView) => void;
 }) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const copy = pageCopy[activeView];
   const userEmail = dashboard?.user.email ?? "";
   const workspaceName = dashboard?.organizations[0]?.name ?? "Workspace";
@@ -41,32 +44,49 @@ export function AppShell({
       .toUpperCase() || "W";
   const userDisplayName = userEmail.split("@")[0]?.replace(/[._-]/g, " ") || "Account";
   const fullBleed = activeView === "builder";
+  const sidebarBrandStyle: CSSProperties = {
+    border: 0,
+    background: "transparent",
+    padding: "4px 6px 18px",
+    width: "100%",
+    textAlign: "left",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 5
+  };
 
   return (
-    <div className="app" data-screen-label={`02 ${copy.title}`}>
+    <div className={cx("app", sidebarCollapsed && "app-sidebar-collapsed")} data-screen-label={`02 ${copy.title}`}>
       <aside className="sidebar">
-        <button type="button" className="brand" onClick={() => onViewChange("dashboard")} style={{ border: 0, background: "transparent", padding: "6px 10px 14px", width: "100%", textAlign: "left", cursor: "pointer" }}>
-          <span className="brand-mark">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5 5L12 2.5L19 5V12C19 16.5 15.5 20 12 21C8.5 20 5 16.5 5 12V5Z" fill="white" fillOpacity="0.92" />
-              <path d="M9 11L11 13L15.5 8.5" stroke="var(--accent-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <span className="brand-name">ScrapTheWeb</span>
-        </button>
-
         <button
           type="button"
-          className="ws-switcher"
-          title="Switch workspace"
-          onClick={() => onViewChange("settings")}
+          className={cx("sidebar-toggle", focusRing)}
+          onClick={() => setSidebarCollapsed((value) => !value)}
+          title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          <div className="ws-avatar">{workspaceInitials}</div>
-          <div className="ws-info">
-            <div className="ws-name">{workspaceName}</div>
-            <div className="ws-plan">{role}</div>
-          </div>
-          <Icon name="chevronUpDown" size={13} />
+          <Icon name={sidebarCollapsed ? "chevronRight" : "chevronLeft"} size={14} />
+        </button>
+        <button type="button" className="brand harvest-brand" onClick={() => onViewChange("builder")} style={sidebarBrandStyle}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/harvest-assets/pics/skrowt-wordmark.png"
+            width={166}
+            height={53}
+            alt="Skrowt"
+            className="brand-wordmark"
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/harvest-assets/pics/skrowt-icon.png"
+            width={28}
+            height={40}
+            alt="Skrowt"
+            className="brand-iconmark"
+          />
+          <span className="brand-tagline">turn websites into structured data</span>
         </button>
 
         <nav className="nav-section">
@@ -76,9 +96,10 @@ export function AppShell({
               type="button"
               className={cx("nav-item", activeView === item.id && "active", focusRing)}
               onClick={() => onViewChange(item.id)}
+              title={sidebarCollapsed ? item.label : undefined}
             >
               <Icon name={item.icon} size={15} className="nav-icon" />
-              <span>{item.label}</span>
+              <span className="nav-text">{item.label}</span>
               {item.badge ? <span className="badge-count">{item.badge}</span> : null}
             </button>
           ))}
@@ -93,9 +114,10 @@ export function AppShell({
               type="button"
               className={cx("nav-item", activeView === item.id && "active", focusRing)}
               onClick={() => onViewChange(item.id)}
+              title={sidebarCollapsed ? item.label : undefined}
             >
               <Icon name={item.icon} size={15} className="nav-icon" />
-              <span>{item.label}</span>
+              <span className="nav-text">{item.label}</span>
             </button>
           ))}
           <button
@@ -104,10 +126,10 @@ export function AppShell({
             onClick={onLogout}
             title="Sign out"
           >
-            <Avatar name={userDisplayName} size={28} />
+            <Avatar name={workspaceInitials} size={28} />
             <div className="pt-info">
               <div className="pt-name">{userDisplayName}</div>
-              <div className="pt-email">{userEmail}</div>
+              <div className="pt-email">{role} · {workspaceName}</div>
             </div>
             <Icon name="chevronUpDown" size={13} style={{ color: "var(--text-muted)" }} />
           </button>
@@ -115,30 +137,32 @@ export function AppShell({
       </aside>
 
       <div className="main">
-        <header className="header">
-          <div className="h-title">
-            <h1>{copy.title}</h1>
-            {copy.subtitle ? <span className="h-sub">{copy.subtitle}</span> : null}
-          </div>
-          <div className="grow" />
-          <div className="search-box">
-            <Icon name="search" size={14} />
-            <input placeholder="Search monitors, websites, records…" />
-            <span className="kbd">⌘K</span>
-          </div>
-          <Button variant="secondary" size="sm" icon="play" onClick={onRunAll}>
-            Run all
-          </Button>
-          <Button variant="primary" size="sm" icon="wand" onClick={onCreateRecipe}>
-            Open Builder
-          </Button>
-          <div style={{ width: 1, height: 22, background: "var(--border)", margin: "0 4px" }} />
-          <button type="button" className="icon-btn" title="Notifications">
-            <Icon name="bell" size={14} />
-            <span className="dot" />
-          </button>
-          <Avatar name={userDisplayName} size={32} className="avatar" />
-        </header>
+        {!fullBleed ? (
+          <header className="header">
+            <div className="h-title">
+              <h1>{copy.title}</h1>
+              {copy.subtitle ? <span className="h-sub">{copy.subtitle}</span> : null}
+            </div>
+            <div className="grow" />
+            <div className="search-box">
+              <Icon name="search" size={14} />
+              <input placeholder="Search monitors, websites, records…" />
+              <span className="kbd">⌘K</span>
+            </div>
+            <Button variant="secondary" size="sm" icon="play" onClick={onRunAll}>
+              Run all
+            </Button>
+            <Button variant="primary" size="sm" icon="wand" onClick={onCreateRecipe}>
+              Open Builder
+            </Button>
+            <div style={{ width: 1, height: 22, background: "var(--border)", margin: "0 4px" }} />
+            <button type="button" className="icon-btn" title="Notifications">
+              <Icon name="bell" size={14} />
+              <span className="dot" />
+            </button>
+            <Avatar name={userDisplayName} size={32} className="avatar" />
+          </header>
+        ) : null}
 
         {fullBleed ? children : <div className="page"><div className="page-inner">{children}</div></div>}
       </div>

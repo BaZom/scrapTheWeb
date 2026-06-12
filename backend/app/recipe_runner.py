@@ -64,10 +64,14 @@ def extract_preview_rows(
     container_selector: str,
     fields: list[dict[str, Any]],
     *,
-    limit: int = 20,
+    limit: int | None = None,
+    page_type: str = "listing",
 ) -> list[dict[str, str]]:
     root = parse_html(html)
-    containers = select_nodes(root, container_selector)[:limit]
+    single_page = page_type == "single" or container_selector == "body"
+    containers = [root] if single_page else select_nodes(root, container_selector)
+    if limit is not None:
+        containers = containers[:limit]
     rows: list[dict[str, str]] = []
     for container in containers:
         row: dict[str, str] = {}
