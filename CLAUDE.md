@@ -1,10 +1,9 @@
-# CLAUDE.md — ScrapTheWeb
+# CLAUDE.md — Skrowt
 
-Visual recipe builder for extracting structured data from public listing/detail pages.
+Visual sprout builder for extracting structured data from public listing/detail pages.
 Next.js frontend (auth, visual picker, field mapping, preview, runs, exports) · FastAPI
-backend (tenant auth, recipe/run APIs, limits, SSRF guards) · arq worker (Playwright
-render + extraction) · Postgres · Redis · S3-compatible storage. Visible brand is **Skrowt**;
-the codebase/repo/APIs keep the internal name **ScrapTheWeb**. See `README.md`.
+backend (tenant auth, saved-sprout/run APIs, limits, SSRF guards) · arq worker (Playwright
+render + extraction) · Postgres · Redis · S3-compatible storage. See `README.md`.
 
 ## Commands
 - **Run the stack:** `docker compose up --build` (frontend :3000, API :8000, worker
@@ -58,8 +57,8 @@ the codebase/repo/APIs keep the internal name **ScrapTheWeb**. See `README.md`.
 ## Data flow — where things are saved (and when)
 Important for reasoning about "stale/wrong data": **nothing is written to DB/storage while
 building fields or previewing.** Two write moments: **Render** → `screenshot.png` + `page.html`
-to S3, `domNodes` + candidates to Redis (TTL), a `PageSession` row to Postgres. **Save recipe**
-→ the recipe to Postgres. Build-time selector gen/preview read the snapshot from Redis/S3; the
+to S3, `domNodes` + candidates to Redis (TTL), a `PageSession` row to Postgres. **Save sprout**
+→ the sprout to Postgres. Build-time selector gen/preview read the snapshot from Redis/S3; the
 saved **run** re-fetches live HTML. Preview-from-snapshot is deterministic and matches the
 screenshot — intended, not a bug.
 

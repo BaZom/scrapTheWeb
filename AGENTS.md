@@ -1,6 +1,6 @@
-# AGENTS.md — ScrapTheWeb
+# AGENTS.md — Skrowt
 
-Conventions for AI agents (Codex and others) working in this repo. Visual recipe builder for
+Conventions for AI agents (Codex and others) working in this repo. Visual sprout builder for
 extracting structured data from public listing/detail pages: Next.js frontend · FastAPI API ·
 arq + Playwright worker · Postgres · Redis · S3/MinIO. See `README.md`.
 
@@ -88,6 +88,6 @@ pattern. Do not add code-shaped inputs to the default builder UI.
 
 Nothing is written to DB/storage while building fields or previewing. Two write moments:
 **Render** → screenshot + `page.html` to S3, `domNodes` + candidates to Redis (TTL), a
-`PageSession` row to Postgres. **Save recipe** → the recipe to Postgres. Build-time selector
+`PageSession` row to Postgres. **Save sprout** → the sprout to Postgres. Build-time selector
 generation/preview read `domNodes` from Redis (the snapshot); the saved **run** re-fetches
 live HTML. See `docs/reference/architecture.md`.

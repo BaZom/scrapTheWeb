@@ -1,11 +1,11 @@
 # Architecture — current state (source of truth)
 
-ScrapTheWeb is a multi-tenant web app for building and running visual extraction recipes
+Skrowt is a multi-tenant web app for building and running visual extraction sprouts
 against public listing/detail pages. This is the single source of truth for the architecture;
 the builder's UI/flow detail lives in [builder.md](builder.md).
 
 Product loop: render a URL → reduce blocking overlays → capture screenshot + DOM → user picks
-the repeating item and fields → generate selectors & preview → save the recipe → run on
+the repeating item and fields → generate selectors & preview → save the sprout → run on
 demand from the Run Test workspace → review real records + changes → export CSV/JSON.
 
 ## System components
@@ -13,9 +13,9 @@ demand from the Run Test workspace → review real records + changes → export 
 | Component | Tech | Role |
 |-----------|------|------|
 | **Frontend** | Next.js (app router), React, Tailwind, Zod | Client workbench: auth, render, builder, preview, runs, diffs, exports. `frontend/`. |
-| **API** | FastAPI (Python 3.11) | Auth, tenancy, page sessions, selectors, preview, recipes, runs, exports, limits, SSRF, health, metrics. `backend/app/`. |
+| **API** | FastAPI (Python 3.11) | Auth, tenancy, page sessions, selectors, preview, sprouts, runs, exports, limits, SSRF, health, metrics. `backend/app/`. |
 | **Worker** | arq + Playwright | Renders pages, captures DOM + screenshot, reduces overlays. Shares the backend image; Prometheus metrics on :9100. `backend/app/worker.py`. |
-| **Postgres** | SQLAlchemy (async) | Durable source of truth: users/orgs, sessions, recipes, runs, records, tokens, API keys, usage counters. |
+| **Postgres** | SQLAlchemy (async) | Durable source of truth: users/orgs, sessions, saved sprouts, runs, records, tokens, API keys, usage counters. |
 | **Redis** | redis-py / arq | Job queue, rate-limit windows, and the short-lived `domNodes`/session payload. |
 | **S3 / MinIO** | boto3 | Rendered `screenshot.png` + `page.html` artifacts (MinIO locally). |
 
@@ -50,16 +50,16 @@ demand from the Run Test workspace → review real records + changes → export 
    from **Redis** and run the in-house matcher. List previews return one row per matched
    item container; single-page previews return one page-wide row
    (`selector_generator.py`).
-5. **Save**: the recipe (item selector + fields) → **Postgres** (`recipes` + `recipe_versions`).
+5. **Save**: the sprout (item selector + fields) → **Postgres** (`recipes` + `recipe_versions`).
 6. **Run**: the worker re-fetches the live page via the same render path, `recipe_runner.py`
-   parses the HTML and extracts records (inside matched containers for listing recipes, or as
-   one page-wide row for single-page recipes), diffs vs the previous run, persists
+   parses the HTML and extracts records (inside matched containers for listing sprouts, or as
+   one page-wide row for single-page sprouts), diffs vs the previous run, persists
    records/changes; CSV/JSON export streams from persisted records.
 
 ## Where data lives, and when it's written
 
 Nothing is written while building fields or previewing. **Two write moments only:** *Render*
-(S3 + Redis + a `page_sessions` row) and *Save recipe* (Postgres). Build-time selector
+(S3 + Redis + a `page_sessions` row) and *Save sprout* (Postgres). Build-time selector
 generation/preview read `domNodes` from Redis; the saved run re-fetches live HTML.
 
 ## Two selector matchers (intentional)
@@ -70,7 +70,7 @@ generation/preview read `domNodes` from Redis; the saved run re-fetches live HTM
   follows the matched container count instead of a hidden fixed sample limit.
 - **HTML matcher** — `recipe_runner.py`, over parsed HTML. Authoritative. Used by the saved
   **run** (and the legacy `/preview`), where full fidelity matters. It preserves the builder's
-  shape contract: listing recipes scope fields to each item container; single-page recipes
+  shape contract: listing sprouts scope fields to each item container; single-page sprouts
   evaluate field selectors page-wide.
 
 Both are fed selectors from the same generator, so a generated selector behaves consistently;
@@ -94,7 +94,7 @@ membership checks on org-scoped paths):
   single-use, TTL-bounded auth tokens.
 - `api_keys` — hashed `sk_*` keys with display prefix, last-used + revocation state.
 - `page_sessions` — rendered URL, status, screenshot key, HTML key, DOM cache identity.
-- `websites`, `recipes`, `recipe_versions` — saved extraction definitions (selectors, fields,
+- `websites`, `recipes`, `recipe_versions` — saved sprout definitions (selectors, fields,
   pagination, dedup settings).
 - `extraction_runs`, `extracted_records`, `change_events` — run history + diff output.
 - `usage_counters` — monthly quota accounting per org and metric.
@@ -105,7 +105,7 @@ The builder uses a **frozen screenshot + DOM overlay picker**, not a live embedd
 Before capture, Playwright runs a backend-only overlay-reduction pass looking for non-invasive
 dismissal controls (reject, necessary-only, close, later, skip, "no thanks") across the page
 and frames, and sends `Escape` for stuck modals. It does **not** store cookies/localStorage,
-does not accept-all, and adds no user-authored steps. Recipe runs use the same render path, so
+does not accept-all, and adds no user-authored steps. Sprout runs use the same render path, so
 preview and run benefit equally. Overlay-dismissal metadata remains backend metadata; it is not
 shown as a builder status chip.
 
@@ -143,10 +143,10 @@ should wire a real email provider.
 Next.js app router. `frontend/lib/api.ts` owns the HTTP client + Zod response schemas; auth
 state is persisted locally and refreshed on expiry. The builder is a compact client-side
 workbench (`app/page.tsx` + `app/components/builder-view.tsx`) for configuring and snapshot
-previewing recipes. Live execution is started and reviewed in the Run Test screen
+previewing sprouts. Live execution is started and reviewed in the Run Test screen
 (`product-screens.tsx`), which shows real extracted records, change diffs, recent tests for
-the selected recipe, and exports; Runs remains cross-recipe execution history. A future
-iteration could split these into dedicated routes (login, settings, recipe create/detail, run
+the selected sprout, and exports; Runs remains cross-sprout execution history. A future
+iteration could split these into dedicated routes (login, settings, sprout create/detail, run
 detail) without changing backend contracts. Builder internals: [builder.md](builder.md).
 
 ## Testing strategy

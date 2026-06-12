@@ -298,7 +298,7 @@ def _export_columns(records: list[ExtractedRecord], configured_fields: list[str]
 
 
 def _safe_filename(run: ExtractionRun, suffix: str) -> str:
-    return f"scraptheweb-run-{run.id}.{suffix}"
+    return f"skrowt-run-{run.id}.{suffix}"
 
 
 async def _configured_field_names(run: ExtractionRun, session: AsyncSession) -> list[str]:

@@ -1,6 +1,6 @@
 # Skrowt Harvest Assets
 
-Seed, sprout, and Skrowt brand resources for the ScrapTheWeb redesign. The directory keeps its
+Seed, sprout, and Skrowt brand resources for the app redesign. The directory keeps its
 historical `harvest-assets` name because the visual system still uses the harvest/plant theme.
 
 ## New assets

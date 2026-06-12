@@ -350,7 +350,7 @@ export function AuthView({
           {(
             [
               { icon: "monitor", label: "Monitor" },
-              { icon: "recipe", label: "Recipe" },
+              { icon: "recipe", label: "Sprout" },
               { icon: "runs", label: "Run" },
               { icon: "records", label: "Records" },
               { icon: "diff", label: "Changes" },

@@ -403,3 +403,23 @@ Decision:
 
 Preserved: the explicit Test run hand-off, one-row single-page behavior, and optional explicit
 preview limits.
+
+## Follow-up 15 (2026-06-12) — Skrowt/Sprout terminology cleanup
+
+The visible brand is Skrowt, and the product concept previously called a "recipe" should now be
+called a **sprout**: a saved extraction definition that can be tested and run.
+
+Decision:
+
+- **Visible UI says Sprout/Sprouts.** Builder actions, workspace navigation, Run Test labels,
+  exports/help text, auth illustration labels, default generated names, and README copy now use
+  Skrowt/Sprout language.
+- **Old ScrapTheWeb visible names removed from product surfaces.** Local storage keys and export
+  filenames use `skrowt.*` / `skrowt-run-*`; the FastAPI title is `Skrowt API`.
+- **Internal contracts are deferred.** Type names, API routes, database tables, and persisted
+  JSON fields still use `Recipe`/`recipes` where changing them would be a migration/API
+  compatibility project.
+- **Cleanup planned.** `docs/backlog/skrowt-internal-cleanup.md` tracks the migration-safe
+  internal rename and simplification work, including remaining debug-only/dead branches.
+
+Preserved: backend API compatibility, existing database schema, and saved run/export behavior.

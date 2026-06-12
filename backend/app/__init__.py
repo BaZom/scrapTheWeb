@@ -1,1 +1,1 @@
-"""ScrapTheWeb backend package."""
+"""Skrowt backend package."""

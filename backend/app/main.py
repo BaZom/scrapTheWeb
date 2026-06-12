@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("api_stopped")
 
 
-app = FastAPI(title="ScrapTheWeb API", version="0.0.0-slice9", lifespan=lifespan)
+app = FastAPI(title="Skrowt API", version="0.0.0-slice9", lifespan=lifespan)
 
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)

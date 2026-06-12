@@ -1,6 +1,6 @@
 # Observability
 
-ScrapTheWeb ships with structured logs, metrics, traces, and error tracking that
+Skrowt ships with structured logs, metrics, traces, and error tracking that
 are configurable through environment variables. Every integration is **disabled
 by default locally** so `docker compose up` works without any external
 observability credentials.

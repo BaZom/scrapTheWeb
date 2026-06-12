@@ -2,22 +2,21 @@
   <img src="docs/skrowt-logo.png" alt="Skrowt" width="440" />
 </p>
 
-# ScrapTheWeb
+# Skrowt
 
 > Product brand: **Skrowt** — _turn websites into structured data_.
-> (The codebase, repository, and APIs keep the internal name ScrapTheWeb.)
 
-ScrapTheWeb is a production-oriented visual recipe builder for extracting
+Skrowt is a production-oriented visual sprout builder for extracting
 structured data from public listing pages. A user signs in, renders a page with
 a hosted browser, clicks a repeated container, labels fields, previews extracted
-rows, saves the recipe, runs it on demand, reviews changes, and exports CSV or
+rows, saves the sprout, runs it on demand, reviews changes, and exports CSV or
 JSON.
 
 The local stack includes the full product surface:
 
 - Next.js frontend with authentication, visual picker, field mapping, previews,
   run results, exports, account controls, and API key management.
-- FastAPI backend with tenant-scoped auth, recipe and run APIs, limits, quotas,
+- FastAPI backend with tenant-scoped auth, sprout and run APIs, limits, quotas,
   security headers, CORS allow-listing, SSRF protection, and sanitized errors.
 - arq worker for Playwright rendering and extraction jobs.
 - Postgres for durable application data, Redis for queues/rate limits/cache,
@@ -25,7 +24,7 @@ The local stack includes the full product surface:
 - Structured logs, request IDs, Prometheus metrics, OpenTelemetry hooks, and
   optional Sentry integration.
 
-ScrapTheWeb is intended for public, permitted web pages. It does not include
+Skrowt is intended for public, permitted web pages. It does not include
 anti-bot evasion, CAPTCHA solving, social scraping, browser extensions,
 scheduled crawling, payments, or AI-generated extraction logic.
 
@@ -86,8 +85,8 @@ and observability endpoints.
 3. Select a repeated book card as the container.
 4. Add fields such as title, detail URL, and price.
 5. Preview the extracted rows.
-6. Save the recipe.
-7. Run the recipe once.
+6. Save the sprout.
+7. Run the sprout once.
 8. Review persisted records and change events.
 9. Export CSV or JSON.
 10. Create an API key and call an allowed read endpoint with `X-API-Key`.
@@ -191,7 +190,7 @@ frontend lint, and frontend type checks.
 
 ## Deployment Notes
 
-ScrapTheWeb is container-ready. A production deployment needs:
+Skrowt is container-ready. A production deployment needs:
 
 - Managed Postgres, Redis, and S3-compatible storage.
 - Long random `JWT_SECRET` and `REFRESH_TOKEN_SECRET` values in a secret store.

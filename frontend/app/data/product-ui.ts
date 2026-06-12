@@ -28,7 +28,7 @@ export const navItems: NavItem[] = [
   { id: "builder", label: "Builder", icon: "wand" },
   { id: "dashboard", label: "Overview", icon: "dashboard" },
   { id: "monitors", label: "Monitors", icon: "monitor", badge: "Soon" },
-  { id: "recipes", label: "Recipes", icon: "recipe" },
+  { id: "recipes", label: "Sprouts", icon: "recipe" },
   { id: "runTest", label: "Run Test", icon: "play" },
   { id: "runs", label: "Runs", icon: "runs" },
   { id: "exports", label: "Exports", icon: "exports" }
@@ -43,8 +43,8 @@ export const pageCopy: Record<AppView, { title: string; subtitle: string }> = {
     title: "Monitor Detail",
     subtitle: "Select a saved monitor once scheduling is available."
   },
-  recipes: { title: "Recipes", subtitle: "Saved extraction templates" },
-  builder: { title: "Recipe Builder", subtitle: "Turn any URL into structured records" },
+  recipes: { title: "Sprouts", subtitle: "Saved extraction templates" },
+  builder: { title: "Sprout Builder", subtitle: "Turn any URL into structured records" },
   runTest: { title: "Run Test", subtitle: "Fetch live data and review changes" },
   runs: { title: "Runs", subtitle: "Execution history" },
   exports: { title: "Exports", subtitle: "CSV & JSON from completed runs" },
@@ -139,7 +139,7 @@ export const DEMO_LATEST_RECORDS: DemoRecord[] = [
   { rank: 3, title: "I rewrote my note-taking app in Rust and it's 1.6× slower", url: "https://blog.kerwood.dev/rust-rewrite", points: 268, comments: 412, user: "kerwood", age: "6h" },
   { rank: 4, title: "OpenTelemetry collector reaches 1.0", url: "https://opentelemetry.io/blog/2026/collector-1-0", points: 219, comments: 41, user: "lzap", age: "7h" },
   { rank: 5, title: "How we cut our S3 bill by 74% without changing access patterns", url: "https://canva.engineering/s3-bill", points: 196, comments: 88, user: "canvaeng", age: "8h" },
-  { rank: 6, title: "Show HN: I built a structured monitor for any public website", url: "https://scraptheweb.app", points: 182, comments: 53, user: "ondrejhrabal", age: "9h" }
+  { rank: 6, title: "Show HN: I built a structured monitor for any public website", url: "https://skrowt.app", points: 182, comments: 53, user: "ondrejhrabal", age: "9h" }
 ];
 
 export type DemoActivity = { ts: number; type: "run" | "fail" | "review" | "saved"; text: string; meta: string };
@@ -149,7 +149,7 @@ export const DEMO_ACTIVITY: DemoActivity[] = [
   { ts: now - 1000 * 60 * 60 * 3,   type: "fail",   text: "Run failed for Amazon — DJI Osmo Pocket",      meta: "Selector returned 0 matches" },
   { ts: now - 1000 * 60 * 60 * 6,   type: "review", text: "Workable — Acme Careers needs review",        meta: "1 selector drifted" },
   { ts: now - 1000 * 60 * 60 * 9,   type: "run",    text: "Run completed for Product Hunt — Today's Launches", meta: "36 records · 7 changes" },
-  { ts: now - 1000 * 60 * 60 * 20,  type: "saved",  text: "Recipe saved: Greenhouse — Notion Careers",   meta: "5 fields mapped" }
+  { ts: now - 1000 * 60 * 60 * 20,  type: "saved",  text: "Sprout saved: Greenhouse — Notion Careers",   meta: "5 fields mapped" }
 ];
 
 export const DEMO_HN_FIELDS = [

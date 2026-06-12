@@ -1,6 +1,6 @@
 # Skrowt Animated Asset Pack
 
-Animated SVG/CSS assets for the Skrowt/ScrapTheWeb builder.
+Animated SVG/CSS assets for the Skrowt builder.
 
 ## Included animated SVGs
 
@@ -45,7 +45,7 @@ Add `harvest-animations.css` content to your `globals.css`.
 
 - Pattern found card: `animated-pattern-found.svg`
 - Preview loading: `animated-collecting-data.svg`
-- Preview ready / recipe saved: `animated-recipe-saved.svg`
+- Preview ready / sprout saved: `animated-recipe-saved.svg`
 - Stepper / ambient trail: `animated-seed-trail.svg`
 - Empty state / logo moment: `animated-sprout-grow.svg`
 

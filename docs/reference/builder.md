@@ -1,7 +1,7 @@
-# The Recipe Builder — current state
+# The Sprout Builder — current state
 
 The builder is the visual, **no-code** workbench where a user turns a public URL into a
-reusable extraction **recipe**: pick the repeating item, choose which fields to collect,
+reusable extraction **sprout**: pick the repeating item, choose which fields to collect,
 preview the screenshot snapshot, and save. Live test runs are started and reviewed on the
 separate **Run Test** page. This file is the source of truth for how it works today.
 
@@ -80,23 +80,23 @@ and is a *verification* view — values may be truncated to ~160 chars; the save
 full values from fresh HTML.)
 
 ### 1.6 Save
-**Save recipe** writes the recipe to the database — it is the **only** persistence in the
+**Save sprout** writes the sprout to the database — it is the **only** persistence in the
 builder, and it's **disabled until a preview exists** (so the user always sees the data first).
-Once the current recipe is saved, the button changes to **Saved** and is disabled so the same
-unchanged recipe cannot be saved repeatedly. Editing upstream mapping state clears
-`savedRecipe`, which makes saving available again for a changed recipe.
+Once the current sprout is saved, the button changes to **Saved** and is disabled so the same
+unchanged sprout cannot be saved repeatedly. Editing upstream mapping state clears
+`savedRecipe`, which makes saving available again for a changed sprout.
 Running is intentionally outside the builder. The builder topbar keeps a **Test run** button
-visible at all times, but it is disabled until the recipe has been saved. Saving keeps the
+visible at all times, but it is disabled until the sprout has been saved. Saving keeps the
 user on the builder in the final **Save** step; clicking **Test run** then opens the **Run
-Test** page with that saved recipe selected. There, the user starts a live test; the worker
+Test** page with that saved sprout selected. There, the user starts a live test; the worker
 re-fetches the live page(s), extracts real data, persists records, computes diffs vs the
 previous run, and offers CSV/JSON export.
 
 ### 1.7 Run Test page
-The **Run Test** page is the live-data workspace. It has a saved-recipe picker, a **Run test**
+The **Run Test** page is the live-data workspace. It has a saved-sprout picker, a **Run test**
 button, a review panel with real extracted records, run status, duration, change counts,
 detailed new/changed/removed rows, and CSV/JSON export actions. Recent tests for the selected
-recipe remain below the review panel. The separate **Runs** page stays as cross-recipe
+sprout remain below the review panel. The separate **Runs** page stays as cross-sprout
 execution history.
 
 ---
@@ -110,7 +110,7 @@ execution history.
   the tool infers the selector from that example without showing selector syntax.
 - **Progressive disclosure.** The one-click happy path stays simple; refinement (missed items,
   multi-attribute fields) appears only when needed.
-- **Verify before commit.** Preview is a no-write dry run; the recipe DB write happens only on
+- **Verify before commit.** Preview is a no-write dry run; the sprout DB write happens only on
   Save, and live data fetching is reviewed separately on Run Test.
 - **One source of truth per concern.** The match count, the on-screenshot outline, and
   extraction all come from the same selector engine, so they can't disagree.
@@ -162,12 +162,12 @@ Two distinct extractors, by design:
   ADR 0001 D4 / 0007 D1.
 - **HTML matcher** (`backend/app/recipe_runner.py`) — parses real HTML and runs the selectors;
   used by the **saved run** (and the legacy `/preview`), where full fidelity matters. Listing
-  recipes extract fields inside each matched item container; single-page recipes extract one
+  sprouts extract fields inside each matched item container; single-page sprouts extract one
   page-wide row so absolute field selectors generated during the builder preview still match
   during the saved run.
 
 **Why the snapshot path is the preview path:** the render snapshot already holds every
-element's text/href/src, so for *building and verifying* a recipe the data is available —
+element's text/href/src, so for *building and verifying* a sprout the data is available —
 no S3 fetch, no HTML re-parse. The saved run still does the authoritative HTML extraction
 against freshly-fetched pages.
 
@@ -182,9 +182,9 @@ test). Preview extracts every matched list item so the row count agrees with the
 ### Frontend (`frontend/`)
 | File | Responsibility |
 |------|----------------|
-| `app/page.tsx` | Orchestration: holds the reducer, all async handlers (render, pick, **preview**, save, run, export), draft persistence, SSE run progress. Builds `builderProps` and routes saved recipes/live runs to the Run Test view. |
+| `app/page.tsx` | Orchestration: holds the reducer, all async handlers (render, pick, **preview**, save, run, export), draft persistence, SSE run progress. Builds `builderProps` and routes saved sprouts/live runs to the Run Test view. |
 | `app/components/builder-view.tsx` | The builder UI: canvas + overlays, shape toggle, item card, the **fields table** (selection), preview button, bottom preview-records panel, and the field **selection model** (`selectedKeys`, `candidatesForNode`, `discoveredFields`). |
-| `app/components/product-screens.tsx` | Workspace screens outside the builder, including Run Test for real extracted records/change review/export and Runs for cross-recipe history. |
+| `app/components/product-screens.tsx` | Workspace screens outside the builder, including Run Test for real extracted records/change review/export and Runs for cross-sprout history. |
 | `lib/builder-reducer.ts` | The flow state machine (§3). |
 | `lib/api.ts` | Zod-validated API client + inferred types (`generateSelector`, `previewFromSnapshot`, `previewPageSession`, recipes, runs, exports, SSE `streamRunEvents`). |
 | `app/components/ui.tsx`, `icons.tsx` | Design-system primitives (Button, Badge, Card, Segmented, Stepper, Tabs, …) and icons. |
@@ -199,7 +199,7 @@ test). Preview extracts every matched list item so the row count agrees with the
 | `worker.py` | arq worker: Playwright render → `render_scripts/dom_candidates.js` (capture DOM + candidates) → consent/overlay reduction → ad/tracker blocking → `_wait_for_dom_stable`; writes screenshot+HTML to S3, payload to Redis. |
 | `page_html_cache.py` | Best-effort in-process TTL+LRU cache of page HTML (ADR 0008). |
 | `overlay_reduction.py` | Consent/cookie overlay dismissal patterns. |
-| `recipes.py`, `runs`/exports, `limits.py`, `ssrf.py` | Recipe CRUD, run/export, rate limits & quotas, SSRF guards on render URLs. |
+| `recipes.py`, `runs`/exports, `limits.py`, `ssrf.py` | Saved-sprout CRUD, run/export, rate limits & quotas, SSRF guards on render URLs. |
 
 ### Render capture (`backend/app/render_scripts/dom_candidates.js`)
 Runs in the page: builds the flat `domNodes` (every visible element with `tag`, `text`
@@ -215,7 +215,7 @@ Nothing is written to the DB/storage while picking fields or previewing. Two wri
 
 - **Render** → `screenshot.png` + `page.html` to **S3**; `domNodes` + candidates to **Redis**
   (TTL); a `PageSession` row to **Postgres**.
-- **Save recipe** → the recipe (item selector + fields) to **Postgres**.
+- **Save sprout** → the sprout (item selector + fields) to **Postgres**.
 
 Between them: selector generation / snapshot preview read `domNodes` from **Redis**; the
 field selection lives in the component + a `localStorage` draft (resume-after-reload). The
@@ -247,7 +247,7 @@ saved **run** re-fetches live HTML and extracts fresh.
 See [production-readiness.md](production-readiness.md) for the full list. Builder-specific
 highlights:
 
-- **Server-side recipe drafts** (today drafts are `localStorage`, per-tab only).
+- **Server-side sprout drafts** (today drafts are `localStorage`, per-tab only).
 - **Field transforms** (trim / number / date / regex-free presets) — post-process values.
 - **Pattern refinement** for cases where the first item pick misses or over-includes cards.
 - **Per-card confidence strip** in the field editor (show a value sampled from several cards).
@@ -278,8 +278,9 @@ built on `motion` (`motion/react`); every piece respects `prefers-reduced-motion
   Geist Mono is the fallback.
 - **Brand + shell:** the builder uses a builder-first Skrowt workbench shell: the uploaded
   Skrowt wordmark, a small "turn websites into structured data" tagline, Builder-first nav,
-  and no generic dashboard header above the builder. This is a *visible-label* change only —
-  there is **no** internal/global rename (the codebase, repo, and APIs stay ScrapTheWeb).
+  and no generic dashboard header above the builder. Visible product language now says
+  **Skrowt** and **sprout**; internal API/model names are still migration-sensitive contracts
+  and are tracked separately in the backlog.
 - **Appearance preferences:** Settings → Appearance lets the user choose **Light** or
   **Night** mode and customize the main accent, plant/sprout color, and paper/sidebar tint.
   These preferences are local to the device (`localStorage`) and applied by `app/page.tsx`
@@ -330,7 +331,7 @@ components were removed in favour of this kit.
     sprout art (via `HarvestArt`) on the preview-ready cue, the empty preview state, and the
     "Saved" badge.
 - **Friendly copy:** plain-language moments — "Click one result to teach the pattern" → "Great!
-  We found N similar results" → "Looking good! Save this recipe, then run it from Run Test."
+  We found N similar results" → "Looking good! Save this sprout, then run it from Run Test."
 - **Friendly field names (display-only):** `isUglyGeneratedName` shows a *"Rename this field"*
   placeholder for auto names like `field_1` / `text_title3`. It **never** changes the internal
   key or the committed field name — purely a UI prompt.

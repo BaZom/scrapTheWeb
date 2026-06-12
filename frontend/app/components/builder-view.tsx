@@ -77,11 +77,9 @@ export type BuilderProps = {
   pickMode: "container" | "field";
   onPickModeChange: (mode: "container" | "field") => void;
   pickerView: "overlays" | "nodes";
-  onPickerViewChange: (view: "overlays" | "nodes") => void;
   fields: PreviewField[];
   // Remove a field by deleting its column in the preview table (ADR 0009).
   onRemoveField: (name: string) => void;
-  fieldSamples: Record<string, string>;
   onStepNavigate: (target: number) => void;
   preview: PreviewResult | null;
   previewBusy: boolean;
@@ -91,7 +89,6 @@ export type BuilderProps = {
     picks: { nodeId: string; extract: ExtractType; name: string; value: string }[]
   ) => void;
   recipeName: string;
-  onRecipeNameChange: (value: string) => void;
   savedRecipe: Recipe | null;
   recipeBusy: boolean;
   onSaveRecipe: () => void;
@@ -491,10 +488,10 @@ export function BuilderView(props: BuilderProps) {
     <div className="builder-root">
       {/* TOP: flow + actions, matching the Skrowt harvest workbench. */}
       <div className="builder-topbar">
-        {/* Left grid column intentionally empty (keeps the stepper centred). The recipe name
+        {/* Left grid column intentionally empty (keeps the stepper centred). The sprout name
             auto-derives on render (reducer `render_succeeded` → `suggestedName`); the sidebar
             carries the brand, so no title/Draft chip is needed here. */}
-        <div className="builder-recipe-chip" />
+        <div className="builder-topbar-spacer" />
 
         <div className="builder-stepper-wrap">
           <HarvestStepper steps={STEPS} current={step} onStepClick={props.onStepNavigate} />
@@ -508,7 +505,7 @@ export function BuilderView(props: BuilderProps) {
             icon="play"
             disabled={!props.savedRecipe || props.recipeBusy}
             onClick={props.onOpenRunTest}
-            title={props.savedRecipe ? "Open the live test workspace for this recipe" : "Save the recipe first"}
+            title={props.savedRecipe ? "Open the live test workspace for this sprout" : "Save the sprout first"}
           >
             Test run
           </Button>
@@ -526,13 +523,13 @@ export function BuilderView(props: BuilderProps) {
             onClick={props.onSaveRecipe}
             title={
               props.savedRecipe
-                ? "Recipe saved"
+                ? "Sprout saved"
                 : !props.preview
                   ? "Preview records first to see the data, then save"
                   : undefined
             }
           >
-            {props.recipeBusy ? "Saving…" : props.savedRecipe ? "Saved" : "Save recipe"}
+            {props.recipeBusy ? "Saving…" : props.savedRecipe ? "Saved" : "Save sprout"}
           </Button>
         </div>
       </div>
@@ -1098,7 +1095,7 @@ export function BuilderView(props: BuilderProps) {
             <div style={{ display: "grid", placeItems: "center", padding: 60 }}>
               <Card className="card-pad" style={{ maxWidth: 520, textAlign: "center" }}>
                 <Badge tone="accent" dot>
-                  Recipe builder
+                  Sprout builder
                 </Badge>
                 <HarvestArt
                   src={HARVEST_ART.emptyStateGrow}

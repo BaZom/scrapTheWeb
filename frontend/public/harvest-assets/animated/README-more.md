@@ -1,6 +1,6 @@
 # Skrowt More Animated Assets
 
-Second animated pack for the Skrowt/ScrapTheWeb builder.
+Second animated pack for the Skrowt builder.
 
 ## Animated SVGs
 
