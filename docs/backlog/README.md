@@ -12,6 +12,7 @@ One file per item. (Broad system limitations / production-hardening directions l
 - **[object-storage-review.md](object-storage-review.md)** — check if/when we still need S3/MinIO object storage.
 - **[api-connections.md](api-connections.md)** — optional "API Connection" official-data-source feature.
 - **[authenticated-sources.md](authenticated-sources.md)** — strategy for login-gated sources: API connections → in-page extension → desktop agent (persistent profile, DOM extraction).
+- **[browser-extension.md](browser-extension.md)** — "Skrowt relocated": run the visual sprout in the user's own browser to reach fortress/login sites without evasion (ADR 0012).
 
 When an item ships, move its rationale into an ADR and update the matching `docs/reference/`
 file, then delete or mark the backlog item done.

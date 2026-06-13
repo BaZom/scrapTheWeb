@@ -64,7 +64,8 @@ screenshot — intended, not a bug.
 
 ## Status & next
 - **Current behavior** → `docs/reference/` (builder, architecture). **Why/history** →
-  `docs/adr/` (current through **ADR 0011**: the Skrowt redesign + builder follow-ups 1–14).
+  `docs/adr/` (current through **ADR 0012**: data-collection strategy — where extraction runs +
+  rejected alternatives; ADR 0011 = Skrowt redesign + builder follow-ups 1–15).
   **Next work** → pull from `docs/backlog/`.
 
 ## Standing guardrails (don't relearn the hard way)

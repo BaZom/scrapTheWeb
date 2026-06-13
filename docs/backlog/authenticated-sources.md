@@ -17,6 +17,13 @@ legitimate first. Each step reuses the existing sprout config + selector/DOM ext
 engine (`backend/app/selector_generator.py`, `recipe_runner.py`,
 `render_scripts/dom_candidates.js`) — only *where rendering happens* changes.
 
+> **Refined in ADR 0012** (the *why* + the full rejected-alternatives list). The concrete v1
+> build is `browser-extension.md`; the external site map is
+> `docs/reference/target-site-landscape.md`. Tier 1 (server-side on friendly sites) is already
+> covered, so this item now tracks **Tier 2 (browser extension)** and **Tier 3 (desktop agent)**.
+> Additional rejected ideas recorded in ADR 0012: **residential proxies**, **proxy cookie
+> injection (reverse-proxy login)**, and **email-alert forwarding + parsing** (off-concept).
+
 ## The ladder
 
 ### 1. API Connections (first — already planned)

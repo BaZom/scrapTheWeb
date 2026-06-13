@@ -34,9 +34,11 @@ This rule is also recorded in `CLAUDE.md` and `AGENTS.md` so every agent/contrib
 - **[production-readiness.md](production-readiness.md)** — broad limitations and directions to
   harden before/at production scale. (Concrete open bugs + specific planned tickets live in
   **`docs/backlog/`**, not here.)
+- **[target-site-landscape.md](target-site-landscape.md)** — external market map of German
+  vehicle sites and *how* Skrowt can collect from each (manual vs scheduled, anti-bot, API +
+  cost). Decisions behind the tiers: **ADR 0012**.
 
 ## Related docs
 
-- `docs/adr/` — decision history (0001–0009).
+- `docs/adr/` — decision history (0001–0012).
 - `docs/backlog/` — open bugs & planned work.
-- `docs/adr/` — decision history (0001–0009).
