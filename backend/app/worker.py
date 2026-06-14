@@ -29,7 +29,6 @@ from app.observability import (
     start_worker_metrics_server,
 )
 from app.overlay_reduction import reduce_blocking_overlays
-from app.recipe_runner import extract_preview_rows
 from app.resources import ensure_bucket, make_engine, make_redis, make_s3_client, make_sessionmaker
 from app.run_health import assess_run_health, drift_message
 
@@ -249,23 +248,22 @@ async def run_recipe(
         url = str(config.get("urlPattern") or recipe.url_pattern)
         container_selector = str(config["containerSelector"])
         page_type = str(config.get("pageType") or recipe.page_type or "listing")
+        is_single = page_type == "single" or container_selector == "body"
         rendered = await _render_with_playwright(
             url,
             ctx["settings"].render_navigation_timeout_ms,
             # Single-page sprouts scope to the whole page (synthetic "body"), so there's no
             # listing container worth waiting for.
-            wait_for_selector=(
-                None
-                if page_type == "single" or container_selector == "body"
-                else container_selector
-            ),
+            wait_for_selector=None if is_single else container_selector,
+            # Extract in the browser with the same engine the builder used (see extract_rows.js).
+            extract_spec={
+                "containerSelector": container_selector,
+                "fields": list(config["fields"]),
+                "pageType": page_type,
+                "limit": None,
+            },
         )
-        rows = extract_preview_rows(
-            rendered["html"],
-            container_selector,
-            list(config["fields"]),
-            page_type=page_type,
-        )
+        rows = rendered["rows"] or []
         await _persist_extracted_records(ctx, run_id, recipe_id, organization_id, rows, config)
 
         # Before diffing, decide whether this run is trustworthy. A broken selector or an
@@ -518,6 +516,7 @@ async def _render_with_playwright(
     navigation_timeout_ms: int,
     *,
     wait_for_selector: str | None = None,
+    extract_spec: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     async with async_playwright() as playwright:
@@ -569,9 +568,13 @@ async def _render_with_playwright(
                     await page.wait_for_selector(wait_for_selector, state="attached", timeout=2000)
                 except Exception:
                     pass
-            # Trigger lazy-loaded / below-fold content before capturing HTML, screenshot, and DOM
-            # nodes — keeps the build freeze and the live run seeing the same content.
-            await _autoscroll(page)
+            # Trigger lazy-loaded / below-fold content before extracting — RUN ONLY. The builder
+            # needs a STATIC, top-anchored snapshot: scrolling reflows lazy images (shifting the
+            # screenshot under the overlay boxes) and inflates the node set past the capture
+            # budget (dropping an item's field nodes). The run extracts data, not coordinates, so
+            # it can scroll freely; the build (no extract_spec) must not.
+            if extract_spec is not None:
+                await _autoscroll(page)
             title = await page.title()
             html = await page.content()
             screenshot = await page.screenshot(full_page=True, type="png")
@@ -584,17 +587,34 @@ async def _render_with_playwright(
                 title,
                 body_text,
             )
-            # Candidate extraction is best-effort: a JS hiccup here must NOT discard the
-            # screenshot/HTML we already captured, so degrade to empty lists on error.
-            try:
-                evaluated = await page.evaluate(_render_script("dom_candidates.js"), MAX_DOM_NODES)
-            except Exception:
-                logger.exception("dom_candidate_extraction_failed")
-                evaluated = {}
-            dom_nodes = evaluated.get("domNodes", []) if isinstance(evaluated, dict) else []
-            container_candidates = (
-                evaluated.get("candidates", []) if isinstance(evaluated, dict) else []
-            )
+            # A run (extract_spec given) extracts rows here in the browser, using the same DOM +
+            # CSS engine the builder picked against — so the run can't diverge from the build.
+            # The builder render (no extract_spec) instead collects the candidate/DOM-node set
+            # for picking. They're mutually exclusive: a run doesn't need candidates, a build
+            # doesn't extract. Both steps are best-effort and must not discard the captured
+            # screenshot/HTML; extract_rows.js itself never throws (bad selector -> empty cell).
+            rows: list[dict[str, str]] | None = None
+            dom_nodes: list[Any] = []
+            container_candidates: list[Any] = []
+            if extract_spec is not None:
+                try:
+                    extracted = await page.evaluate(_render_script("extract_rows.js"), extract_spec)
+                    rows = extracted if isinstance(extracted, list) else []
+                except Exception:
+                    logger.exception("row_extraction_failed")
+                    rows = []
+            else:
+                try:
+                    evaluated = await page.evaluate(
+                        _render_script("dom_candidates.js"), MAX_DOM_NODES
+                    )
+                except Exception:
+                    logger.exception("dom_candidate_extraction_failed")
+                    evaluated = {}
+                dom_nodes = evaluated.get("domNodes", []) if isinstance(evaluated, dict) else []
+                container_candidates = (
+                    evaluated.get("candidates", []) if isinstance(evaluated, dict) else []
+                )
             return {
                 "title": title,
                 "html": html,
@@ -603,6 +623,7 @@ async def _render_with_playwright(
                 "container_candidates": container_candidates,
                 "overlay_dismissals": overlay_dismissals,
                 "access_block": access_block,
+                "rows": rows,
             }
         finally:
             await browser.close()
