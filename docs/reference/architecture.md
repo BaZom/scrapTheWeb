@@ -51,9 +51,11 @@ demand from the Run Test workspace → review real records + changes → export 
    item container; single-page previews return one page-wide row
    (`selector_generator.py`).
 5. **Save**: the sprout (item selector + fields) → **Postgres** (`recipes` + `recipe_versions`).
-6. **Run**: the worker re-fetches the live page via the same render path, `recipe_runner.py`
-   parses the HTML and extracts records (inside matched containers for listing sprouts, or as
-   one page-wide row for single-page sprouts). Before diffing, the run is **health-checked**
+6. **Run**: the worker re-fetches the live page via the same render path and extracts records
+   **in the browser** (`render_scripts/extract_rows.js` — the same DOM/CSS engine the builder
+   picked against; inside matched containers for listing sprouts, or one page-wide row for
+   single-page sprouts). The render auto-scrolls first (run only) to load lazy content. Before
+   diffing, the run is **health-checked**
    (`run_health.py`): if it was blocked (anti-bot) or its extraction collapsed to zero against
    a populated baseline (selector drift), the run is marked **`needs_attention`**, its records
    are kept for inspection, and **no diff is persisted** (so a broken sprout never emits a false
@@ -87,24 +89,21 @@ Nothing is written while building fields or previewing. **Two write moments only
 (S3 + Redis + a `page_sessions` row) and *Save sprout* (Postgres). Build-time selector
 generation/preview read `domNodes` from Redis; the saved run re-fetches live HTML.
 
-## Two selector matchers (intentional)
+## Extraction engines (build vs run)
 
-- **Snapshot matcher** — `selector_generator.py`, over the flat `domNodes`. Fast, in-memory,
-  a bounded CSS subset (`>`-chained `tag`/`.class`/`#id`/`[attr]`/`:nth-of-type`). Used at
-  build time: `generate_selector`, `preview_from_snapshot`. For list pages, preview row count
-  follows the matched container count instead of a hidden fixed sample limit.
-- **HTML matcher** — `recipe_runner.py`, over parsed HTML. Authoritative. Used by the saved
-  **run** (and the legacy `/preview`), where full fidelity matters. It preserves the builder's
-  shape contract: listing sprouts scope fields to each item container; single-page sprouts
-  evaluate field selectors page-wide.
+The saved **run** extracts in the **browser** (`render_scripts/extract_rows.js`,
+`querySelectorAll`/`innerText`) — the real DOM/CSS engine the builder picked against. This is the
+authoritative path and it can't diverge from what the user mapped: malformed HTML (implicit
+`<tbody>`, optional-closing `<li>`) and text (`innerText` vs `textContent`) are handled exactly
+as a browser handles them. (Why + the prior divergence this replaced: **ADR 0015**.)
 
-Both are fed selectors from the same generator, but they are **separate engines over separate
-DOM representations (browser vs. a hand-rolled Python `HTMLParser`)** and can diverge on real
-HTML — e.g. implicit `<tbody>` and optional-closing `<li>` shift `nth-of-type`, and
-`innerText` vs `textContent` differ. So a selector mapped in the builder can match different
-rows (or none) on the saved run. This is a known robustness gap with a verified diagnosis and
-fix plan: `docs/backlog/extraction-robustness.md`. The snapshot path also trades fidelity (text
-truncation) for speed at build time. See [builder.md §4](builder.md).
+The **build** still uses the in-memory **snapshot matcher** — `selector_generator.py` over the
+flat `domNodes` (a bounded CSS subset: `>`-chained `tag`/`.class`/`#id`/`[attr]`/`:nth-of-type`),
+for `generate_selector` and `preview_from_snapshot`. It's the fast no-fetch picking/preview aid;
+it trades fidelity (text truncation, a node-count budget) for speed, so on large pages the
+preview can show fewer fully-populated rows than the run will collect — the preview table hides
+the empty shells and says "run to collect all listings." The run is the source of truth. See
+[builder.md §4](builder.md).
 
 ## Caching
 

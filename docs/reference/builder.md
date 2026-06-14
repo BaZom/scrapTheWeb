@@ -169,11 +169,12 @@ Two distinct extractors, by design:
   preview returns one row per matched container for list pages; it does not apply a hidden
   fixed sample cap. Deliberately *not* a full CSS engine — see
   ADR 0001 D4 / 0007 D1.
-- **HTML matcher** (`backend/app/recipe_runner.py`) — parses real HTML and runs the selectors;
-  used by the **saved run** (and the legacy `/preview`), where full fidelity matters. Listing
-  sprouts extract fields inside each matched item container; single-page sprouts extract one
-  page-wide row so absolute field selectors generated during the builder preview still match
-  during the saved run.
+- **Browser extractor** (`backend/app/render_scripts/extract_rows.js`) — the **saved run**
+  extracts in the live browser via `querySelectorAll`/`innerText`, the same DOM/CSS engine the
+  builder picked against, so the run can't diverge from the build (ADR 0015). Listing sprouts
+  extract fields inside each matched item container; single-page sprouts extract one page-wide
+  row. (This replaced the old Python `recipe_runner.py` HTML matcher, which diverged on real
+  HTML — implicit `<tbody>`, optional-close tags, `innerText` vs `textContent`.)
 
 **Why the snapshot path is the preview path:** the render snapshot already holds every
 element's text/href/src, so for *building and verifying* a sprout the data is available —
@@ -195,17 +196,17 @@ test). Preview extracts every matched list item so the row count agrees with the
 | `app/components/builder-view.tsx` | The builder UI: canvas + overlays, shape toggle, item card, the **fields table** (selection), preview button, bottom preview-records panel, and the field **selection model** (`selectedKeys`, `candidatesForNode`, `discoveredFields`). |
 | `app/components/product-screens.tsx` | Workspace screens outside the builder, including Run Test for real extracted records/change review/export and Runs for cross-sprout history. |
 | `lib/builder-reducer.ts` | The flow state machine (§3). |
-| `lib/api.ts` | Zod-validated API client + inferred types (`generateSelector`, `previewFromSnapshot`, `previewPageSession`, recipes, runs, exports, SSE `streamRunEvents`). |
+| `lib/api.ts` | Zod-validated API client + inferred types (`generateSelector`, `previewFromSnapshot`, recipes, runs, exports, SSE `streamRunEvents`). |
 | `app/components/ui.tsx`, `icons.tsx` | Design-system primitives (Button, Badge, Card, Segmented, Stepper, Tabs, …) and icons. |
 | `app/components/animations/*` | Reusable, client-only **motion layer** (§9): result-outline pulse/reveal, animated field/preview rows, preview drawer, seed burst, sprout/loading art. Visual-only; respects reduced motion. |
 
 ### Backend (`backend/app/`)
 | File | Responsibility |
 |------|----------------|
-| `page_sessions.py` | Page-session endpoints: render/create, `GET screenshot`, `POST /selector`, `POST /preview` (HTML), `POST /preview/snapshot` (fast). Loads `domNodes` from Redis, HTML from S3 (via the cache). |
+| `page_sessions.py` | Page-session endpoints: render/create, `GET screenshot`, `POST /selector`, `POST /preview/snapshot` (fast snapshot preview). Loads `domNodes` from Redis. |
 | `selector_generator.py` | The snapshot matcher + `generate_selector` / `preview_from_snapshot` and helpers (`_matching_nodes`, `_matching_descendants`, `_descendants_by_container`, `_select_within`). |
-| `recipe_runner.py` | `parse_html` + `select_nodes` + `extract_preview_rows` — authoritative HTML extraction for runs; honors listing vs single-page extraction scope. |
-| `worker.py` | arq worker: Playwright render → `render_scripts/dom_candidates.js` (capture DOM + candidates) → consent/overlay reduction → ad/tracker blocking → `_wait_for_dom_stable`; writes screenshot+HTML to S3, payload to Redis. |
+| `render_scripts/extract_rows.js` | Browser-side row extraction for the **saved run** (`querySelectorAll`/`innerText`) — the same engine the builder picks against (ADR 0015). |
+| `worker.py` | arq worker: Playwright render → `render_scripts/dom_candidates.js` (build: capture DOM + candidates) or `extract_rows.js` (run: extract rows) → consent/overlay reduction → ad/tracker blocking → `_wait_for_dom_stable`; auto-scroll on runs; writes screenshot+HTML to S3, payload to Redis. |
 | `page_html_cache.py` | Best-effort in-process TTL+LRU cache of page HTML (ADR 0008). |
 | `overlay_reduction.py` | Consent/cookie overlay dismissal patterns. |
 | `recipes.py`, `runs`/exports, `limits.py`, `ssrf.py` | Saved-sprout CRUD, run/export, rate limits & quotas, SSRF guards on render URLs. |

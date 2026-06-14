@@ -11,6 +11,10 @@ render + extraction) · Postgres · Redis · S3-compatible storage. See `README.
 - **Backend tests/lint** (host python lacks pytest/ruff — use the container):
   `docker compose run --rm --no-deps -v "$PWD/backend:/app" api pytest -q` · `... ruff check .`.
   Host `python3` *does* have `playwright` and can import pure modules like `app.selector_generator`.
+- **Browser-engine tests need Chromium**, which only the **worker** image has (the `api` image
+  doesn't, so they silently *skip* under the command above). Run them explicitly:
+  `docker compose run --rm --no-deps -v "$PWD/backend:/app" worker pytest -q tests/test_extract_rows_browser.py`
+  (these verify the run's `extract_rows.js` extraction — the Phase B engine; ADR 0015).
 - **Frontend** (`cd frontend`): `npm test` (Vitest) · `npm run typecheck` · `npm run lint`
   · `npm run build`. Note: `next lint` rewrites `next-env.d.ts` (it has an intentional
   custom comment) — `git checkout -- frontend/next-env.d.ts` after linting.
@@ -49,9 +53,10 @@ render + extraction) · Postgres · Redis · S3-compatible storage. See `README.
   blocks ad/tracker requests (`RENDER_BLOCK_ADS`), waits for consent-rebuild via
   `_wait_for_dom_stable`.
 - **Selectors/preview:** `backend/app/selector_generator.py` (`generate_selector` →
-  selector/matchCount/strategy/matchedNodeIds; honors `page_type`/single-page scope) and
-  `recipe_runner.py` (authoritative HTML extraction for saved runs). Endpoints in
-  `backend/app/page_sessions.py`.
+  selector/matchCount/strategy/matchedNodeIds; honors `page_type`/single-page scope; build-time
+  snapshot preview). The saved **run** extracts in the browser via
+  `render_scripts/extract_rows.js` (same engine the builder picks against; ADR 0015). Endpoints
+  in `backend/app/page_sessions.py`.
 - **Builder UI:** `frontend/app/page.tsx` (orchestration) drives `components/builder-view.tsx`;
   flow state is a reducer in `frontend/lib/builder-reducer.ts` (don't add scattered useState);
   API client in `lib/api.ts`. Run progress streams via SSE (`streamRunEvents`) with polling

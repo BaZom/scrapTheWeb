@@ -35,8 +35,9 @@ page of the user's own data goes to their own account — the build-time data-le
 ### Job 2 — Run the saved sprout (replaces the worker's extraction step)
 1. Trigger: **"Collect now,"** or a scheduled `chrome.alarms` fire (while the browser is open).
 2. Background worker opens the sprout's target URL in a **background tab** (user's live session).
-3. Content script runs the **sprout's saved selectors** against the live DOM — the same
-   extraction `recipe_runner.py` does, ported to a JS content script.
+3. Content script runs the **sprout's saved selectors** against the live DOM — reusing
+   `render_scripts/extract_rows.js` (the saved run already extracts in the browser, ADR 0015),
+   so the content script runs it **verbatim** rather than porting anything.
 4. Sends **only structured rows** (item facts — **never seller PII**) to the server.
 5. The **existing diff engine** computes new/changed/removed → records → fires alert/export.
 
@@ -45,7 +46,7 @@ page of the user's own data goes to their own account — the build-time data-le
 |---|---|
 | `render_scripts/dom_candidates.js` | content script (build), **verbatim** |
 | `selector_generator.py` / builder UI | **unchanged** — fed by the posted snapshot |
-| `recipe_runner.py` extraction logic | ported to content script (run) |
+| `render_scripts/extract_rows.js` (run extraction) | content script (run), **verbatim** |
 | diff / records / runs / exports / alerts | **unchanged**, server-side |
 | `PageSession` + records ingestion shapes | reused by two new endpoints (below) |
 

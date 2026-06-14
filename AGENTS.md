@@ -82,6 +82,8 @@ pattern. Do not add code-shaped inputs to the default builder UI.
   "$PWD/backend:/app"` runs against current code without touching a running stack):
   `docker compose run --rm --no-deps -v "$PWD/backend:/app" api pytest -q` ·
   `... ruff check .`. Host `python3` *can* import pure modules like `app.selector_generator`.
+- **Browser-engine tests need Chromium** (only the **worker** image has it — they silently *skip*
+  on `api`): `docker compose run --rm --no-deps -v "$PWD/backend:/app" worker pytest -q tests/test_extract_rows_browser.py`.
 - **Frontend** (`cd frontend`): `npm test` (Vitest) · `npm run typecheck` · `npm run lint` ·
   `npm run build`.
 
@@ -92,8 +94,9 @@ pattern. Do not add code-shaped inputs to the default builder UI.
   `frontend/lib/builder-reducer.ts`; API client in `frontend/lib/api.ts`.
 - **Render → snapshot:** `backend/app/worker.py` + `render_scripts/dom_candidates.js`.
 - **Selectors/preview:** `backend/app/selector_generator.py` (snapshot matcher: generate /
-  infer / preview_from_snapshot) and `backend/app/recipe_runner.py` (authoritative HTML
-  extraction for runs). Endpoints in `backend/app/page_sessions.py`.
+  infer / preview_from_snapshot). The saved **run** extracts in the browser via
+  `render_scripts/extract_rows.js` (same engine the builder picks against; ADR 0015). Endpoints
+  in `backend/app/page_sessions.py`.
 - **Full detail:** `docs/reference/builder.md`, `docs/reference/architecture.md`.
 
 ## Data flow (reason about "stale/wrong data" here)

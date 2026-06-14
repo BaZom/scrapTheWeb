@@ -33,6 +33,13 @@ deliberately.
   - **ADRs 0007 / 0011** mention `scraptheweb`/`ScrapTheWeb` — *append-only history, never
     rewrite.* Reference docs (`observability.md`, `runbook.md`) correctly document the
     *current* (un-renamed) metric names/image tags, so they stay until the contracts move.
+- **Orphaned page-HTML cache subsystem (since ADR 0015).** Removing the dead `/preview` endpoint
+  left `_load_page_session_html` (`page_sessions.py`), the whole `page_html_cache` subsystem
+  (`page_html_cache.py`, `resources.make_page_html_cache`, the `PAGE_HTML_CACHE_*` settings in
+  `config.py`, app-state wiring, `test_page_html_cache.py` / `test_page_session_html_loader.py`)
+  with no runtime caller. Remove it (or repurpose) — touches config/resources/app wiring, so it's
+  its own small change, not folded into the extraction work. Note: the stored S3 `page.html` is
+  now read by nothing either (feeds `object-storage-review.md`).
 - Revisit large workspace screens for repeated table/card patterns after the rename settles.
 
 ## Acceptance notes

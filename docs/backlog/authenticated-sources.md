@@ -14,8 +14,8 @@ Akamai). Skrowt's constraints are fixed:
 
 This item records the validated strategy (2026-06): a three-step ladder, cheapest and most
 legitimate first. Each step reuses the existing sprout config + selector/DOM extraction
-engine (`backend/app/selector_generator.py`, `recipe_runner.py`,
-`render_scripts/dom_candidates.js`) — only *where rendering happens* changes.
+engine (`backend/app/selector_generator.py`, `render_scripts/dom_candidates.js`,
+`render_scripts/extract_rows.js`) — only *where rendering happens* changes.
 
 > **Refined in ADR 0012** (the *why* + the full rejected-alternatives list) and sequenced by
 > **ADR 0013** / `docs/reference/product-strategy.md`. Tier 1 (`server`, friendly sites) is

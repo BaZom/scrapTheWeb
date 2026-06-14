@@ -12,8 +12,7 @@ One file per item. (Broad system limitations / production-hardening directions l
 ## Items (by roadmap phase)
 
 **Phase 0 — core loop excellence on public listings (now):**
-- **[extraction-robustness.md](extraction-robustness.md)** — make the saved run agree with the builder. Diagnosis verified (build engine ≠ run engine: tables break, `nth`/text diverge); fix plan proposed, awaiting go. *Highest-value Phase 0 work — the data must be right before alerts amplify it.*
-- **[alerts.md](alerts.md)** — push meaningful changes to the user (email/webhook). The remaining gap before the Phase 0 exit gate ("a user acts on a meaningful alert"). *Selector-drift recovery, the precondition, is in place — see ADR 0014 + `architecture.md`.*
+- **[alerts.md](alerts.md)** — push meaningful changes to the user (email/webhook). The remaining gap before the Phase 0 exit gate ("a user acts on a meaningful alert"). *Selector-drift recovery (ADR 0014) and run/build extraction parity (ADR 0015) are in place — the diff is trustworthy.*
 - **[builder-ui-enhancements.md](builder-ui-enhancements.md)** — preview-table polish in the builder.
 - **[ux-polish.md](ux-polish.md)** — single-item page UX + icon/spacing consistency pass.
 - **[skrowt-internal-cleanup.md](skrowt-internal-cleanup.md)** — deeper Sprout/API/internal naming cleanup and simplification.

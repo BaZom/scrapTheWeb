@@ -309,23 +309,6 @@ export async function generateSelector(
   return parseApiResponse(response, selectorSchema);
 }
 
-export async function previewPageSession(
-  sessionId: string,
-  containerSelector: string,
-  fields: PreviewField[],
-  accessToken: string
-): Promise<PreviewResult> {
-  const response = await fetch(`${baseUrl}/api/page-sessions/${sessionId}/preview`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ containerSelector, fields })
-  });
-  return parseApiResponse(response, previewSchema);
-}
-
 export type SnapshotPick = { nodeId: string; extract: ExtractType; name: string };
 export type SnapshotPreview = z.infer<typeof snapshotPreviewSchema>;
 
