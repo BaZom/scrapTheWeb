@@ -591,18 +591,21 @@ async def _render_with_playwright(
             # CSS engine the builder picked against — so the run can't diverge from the build.
             # The builder render (no extract_spec) instead collects the candidate/DOM-node set
             # for picking. They're mutually exclusive: a run doesn't need candidates, a build
-            # doesn't extract. Both steps are best-effort and must not discard the captured
-            # screenshot/HTML; extract_rows.js itself never throws (bad selector -> empty cell).
+            # doesn't extract.
             rows: list[dict[str, str]] | None = None
             dom_nodes: list[Any] = []
             container_candidates: list[Any] = []
             if extract_spec is not None:
+                # extract_rows.js swallows bad selectors (-> empty cell), so a throw here is a
+                # real extractor/script/context failure, NOT "0 rows". Let it propagate so the
+                # run is marked failed — masking it as an empty success would hide a broken
+                # deploy/script behind a health-check that waves through 0 rows on a first run.
                 try:
                     extracted = await page.evaluate(_render_script("extract_rows.js"), extract_spec)
-                    rows = extracted if isinstance(extracted, list) else []
                 except Exception:
                     logger.exception("row_extraction_failed")
-                    rows = []
+                    raise
+                rows = extracted if isinstance(extracted, list) else []
             else:
                 try:
                     evaluated = await page.evaluate(
