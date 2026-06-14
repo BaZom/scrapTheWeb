@@ -31,9 +31,12 @@ render + extraction) · Postgres · Redis · S3-compatible storage. See `README.
   - So a non-trivial change typically touches **both** the ADR (why) and the reference (current
     truth) in the same commit. (`AGENTS.md` mirrors these rules for non-Claude agents — keep
     the two in sync if you change conventions.)
-- **Context efficiency:** when continuing in the same thread, rely on existing context — don't
-  broadly reread the same docs each turn. Use targeted reads (`rg -n`, then `sed -n`/`nl -ba`
-  around exact lines); avoid whole-file reads and large diffs unless needed.
+- **Context efficiency:** orient from this file → the top of
+  `docs/reference/product-strategy.md` when strategy/priority matters, then read only the
+  task-specific backlog item and the smallest relevant reference/ADR sections. Do **not** start
+  sessions by broadly reading README indexes, all ADRs, or full technical refs unless the task
+  area is unclear. Use targeted reads (`rg -n`, then `sed -n`/`nl -ba` around exact lines);
+  avoid whole-file reads and large diffs unless needed.
 - **Small, isolated commits**, one logical change each. Commit pre-existing uncommitted work
   separately *before* starting new work.
 - **Do NOT add a Co-Authored-By / agent trailer** to commit messages (user preference).

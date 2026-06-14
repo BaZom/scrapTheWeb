@@ -2,11 +2,34 @@
 
 Conventions for AI agents (Codex and others) working in this repo. Visual sprout builder for
 extracting structured data from public listing/detail pages: Next.js frontend · FastAPI API ·
-arq + Playwright worker · Postgres · Redis · S3/MinIO. See `README.md`.
+arq + Playwright worker · Postgres · Redis · S3/MinIO.
+
+## Codex context loading (token budget)
+
+Keep each session small and targeted:
+
+- **Default entrypoint:** this `AGENTS.md`. Do **not** read `CLAUDE.md` by default; it mirrors
+  these conventions for Claude. Read it only when explicitly asked or when changing agent
+  instructions.
+- **Strategy / "what next" / feature priority:** read only the top of
+  `docs/reference/product-strategy.md` first, especially **Current focus / next action**. Use
+  `rg -n` to jump to more sections only when needed.
+- **Implementation task:** read the one matching backlog item, then the smallest relevant
+  section of `docs/reference/builder.md` or `docs/reference/architecture.md`. Read the relevant
+  ADR only for non-trivial behavior/architecture changes or when the backlog item points to it.
+- **Do not start sessions by broadly reading** `docs/reference/README.md`,
+  `docs/backlog/README.md`, all ADRs, or full technical references. Use those indexes only
+  when the task area is unclear.
+- Prefer targeted reads: `rg -n` for the symbol/section, then `sed -n`/`nl -ba` around exact
+  lines. Avoid whole-file reads and large `git diff` dumps unless genuinely needed.
+- Prefer focused tests/checks first. Run broader checks when the change touches shared types,
+  build configuration, extraction contracts, or broad UI behavior.
+- If persistent working notes are useful, keep them local/in-repo under ignored `scratch/`
+  rather than re-deriving context from docs and diffs on every follow-up.
 
 ## Documentation rules (important)
 
-Two doc layers, **both kept current**:
+Three doc layers, **all kept current**:
 
 - **`docs/adr/`** = *history*. Numbered, append-only, dated Architecture Decision Records:
   what changed and **why**, with rejected alternatives. Read the relevant ADR before changing
@@ -22,30 +45,13 @@ Two doc layers, **both kept current**:
   matching `docs/reference/` file, and remove/close the backlog item.
 
 So a non-trivial change usually touches the ADR (the *why*) and the reference file (the new
-*current truth*) in the same commit. Start by reading `docs/reference/README.md` and
-`docs/backlog/README.md`.
+*current truth*) in the same commit.
 
 **For the business model, the four-source architecture, and the strict roadmap / current
 focus, read `docs/reference/product-strategy.md` first** (the *why* is ADR 0013). Each fact
 lives in exactly one layer — business+plan there, tech in `architecture.md`/`builder.md`, why
-in ADRs, market in `target-site-landscape.md` — so a session orients from CLAUDE.md →
+in ADRs, market in `target-site-landscape.md` — so a Codex session orients from this file →
 `product-strategy.md` and dips into a technical ref only when the task needs it.
-
-## Context efficiency (important)
-
-Keep token usage low without losing codebase understanding:
-
-- When continuing work in the **same feature area/thread**, rely first on the existing thread
-  context and any current working summary. Do **not** broadly reread the same docs every turn.
-- Use targeted reads: `rg -n` for the symbol/section, then `sed -n`/`nl -ba` around only the
-  relevant lines. Avoid whole-file reads and large `git diff` dumps unless genuinely needed.
-- Still follow the documentation rules: for non-trivial feature/flow changes, update the
-  matching `docs/reference/` section and append/extend the relevant ADR. Read only the exact
-  doc sections needed to make those updates unless the area is new or unclear.
-- Prefer focused tests/checks first. Run broader checks when the change touches shared types,
-  build configuration, extraction contracts, or broad UI behavior.
-- If a persistent working note is useful, keep it local/in-repo under ignored `scratch/`
-  rather than re-deriving context from docs and diffs on every follow-up.
 
 ## Product principle (load-bearing)
 
