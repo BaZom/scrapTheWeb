@@ -1391,6 +1391,13 @@ function PreviewRecordsPanel({
   busy: boolean;
   onRemoveField: (name: string) => void;
 }) {
+  // The snapshot preview can leave later matched items as empty shells on large pages (their
+  // detail nodes fall outside the build-time capture budget); the saved RUN extracts them all.
+  // Hide the all-empty rows and point the user to a run, instead of showing blank rows.
+  const populated = rows.filter((row) =>
+    fields.some((f) => String(row[f.name] ?? "").trim() !== "")
+  );
+  const hiddenCount = rows.length - populated.length;
   return (
     <div
       className="builder-bottom-panel"
@@ -1401,7 +1408,7 @@ function PreviewRecordsPanel({
           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
             Preview records
           </span>
-          <Badge tone="outline">{rows.length} rows</Badge>
+          <Badge tone="outline">{rows.length} matched</Badge>
         </div>
         <div style={{ flex: 1 }} />
       </div>
@@ -1448,7 +1455,7 @@ function PreviewRecordsPanel({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
+                {populated.map((row, i) => (
                   <AnimatedPreviewRow key={i} index={i}>
                     {fields.map((f) => (
                       <td
@@ -1473,6 +1480,27 @@ function PreviewRecordsPanel({
                 ))}
               </tbody>
             </table>
+            {hiddenCount > 0 ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 14px",
+                  fontSize: 12.5,
+                  color: "var(--text-muted)",
+                  borderTop: "1px solid var(--divider)"
+                }}
+              >
+                <Icon name="info" size={14} style={{ flexShrink: 0 }} />
+                <span>
+                  Showing {populated.length} of {rows.length} matched items in this preview.{" "}
+                  <strong style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
+                    Run the sprout to collect all listings.
+                  </strong>
+                </span>
+              </div>
+            ) : null}
           </AnimatedPreviewDrawer>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "48px 24px", textAlign: "center" }}>
