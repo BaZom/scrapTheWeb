@@ -560,7 +560,7 @@ export function BuilderView(props: BuilderProps) {
               disabled={props.renderBusy}
               className="builder-reload-button"
             >
-              {props.renderBusy ? "Loading…" : "Reload"}
+              Load page
             </Button>
           </form>
 
@@ -1492,7 +1492,7 @@ function PreviewRecordsPanel({
                   borderTop: "1px solid var(--divider)"
                 }}
               >
-                <Icon name="info" size={14} style={{ flexShrink: 0 }} />
+                <HarvestArt src={HARVEST_ART.collecting} size={24} />
                 <span>
                   Showing {populated.length} of {rows.length} matched items in this preview.{" "}
                   <strong style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
