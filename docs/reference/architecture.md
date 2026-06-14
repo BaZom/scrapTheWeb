@@ -53,8 +53,33 @@ demand from the Run Test workspace → review real records + changes → export 
 5. **Save**: the sprout (item selector + fields) → **Postgres** (`recipes` + `recipe_versions`).
 6. **Run**: the worker re-fetches the live page via the same render path, `recipe_runner.py`
    parses the HTML and extracts records (inside matched containers for listing sprouts, or as
-   one page-wide row for single-page sprouts), diffs vs the previous run, persists
-   records/changes; CSV/JSON export streams from persisted records.
+   one page-wide row for single-page sprouts). Before diffing, the run is **health-checked**
+   (`run_health.py`): if it was blocked (anti-bot) or its extraction collapsed to zero against
+   a populated baseline (selector drift), the run is marked **`needs_attention`**, its records
+   are kept for inspection, and **no diff is persisted** (so a broken sprout never emits a false
+   "everything removed"). Otherwise it diffs vs the previous *completed* run, persists
+   records/changes, and is marked `completed`; CSV/JSON export streams from persisted records.
+
+### Run statuses & the drift fail-safe
+
+`extraction_runs.status` is `queued → running →` one of `completed` / `failed` /
+**`needs_attention`**. The diff (`change_detector.detect_changes`) is pure set math: previous-N
+vs current-0 ⇒ N "removed" events. A silently-broken selector (or an anti-bot block) extracts
+zero rows, so diffing it would persist a mass-removal lie. `run_recipe` therefore calls
+`assess_run_health(...)` *before* `persist_change_events_for_run`:
+
+- **baseline** = the previous `completed` run's `total_records` (same run the diff compares
+  against — no separate store, no build-time `matchCount`, no migration);
+- **`blocked`** = the render's existing anti-bot signal (`_detect_access_block`, previously
+  computed and discarded on the run path);
+- **`drift` / `empty`** = baseline > 0 **and** extraction ≤ `DRIFT_FLOOR_RATIO` of baseline
+  (starts at 0 ⇒ only a total collapse to zero trips it). **Both quarantine** — diffing either
+  would persist a false mass-removal; `page_had_content` only picks the reason (content present
+  but items vanished ⇒ `drift`, re-pick; blank/near-empty shell ⇒ `empty`, often transient).
+
+All three (`blocked`/`drift`/`empty`) map to the `needs_attention` run status, which is excluded
+from baseline selection, so one bad run can't poison the next comparison. Recovery is **by example** (the standing guardrail): the user re-opens the page
+and re-picks; the next successful run re-establishes the baseline. Rationale: **ADR 0014**.
 
 ## Where data lives, and when it's written
 

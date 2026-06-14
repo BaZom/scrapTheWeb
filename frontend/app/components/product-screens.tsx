@@ -80,11 +80,16 @@ function runChangeCount(run: ExtractionRun): number {
   return run.changes.new.length + run.changes.changed.length + run.changes.removed.length;
 }
 
-function statusGroup(status: string): "completed" | "running" | "failed" | "pending" {
+function statusGroup(
+  status: string
+): "completed" | "running" | "failed" | "attention" | "pending" {
   const s = status.toLowerCase();
   if (s === "completed" || s === "succeeded" || s === "ok") return "completed";
   if (s === "running") return "running";
   if (s === "failed" || s === "error") return "failed";
+  // A drifted/blocked run extracted nothing trustworthy — surface it for a re-pick,
+  // never as a normal completed run (its diff was deliberately not persisted).
+  if (s === "needs_attention" || s === "needs" || s === "paused") return "attention";
   return "pending";
 }
 
@@ -335,15 +340,19 @@ export function DashboardView({
                   const meta =
                     group === "failed"
                       ? r.errorMessage ?? "Run failed"
-                      : group === "completed"
-                        ? `${fmtInt(r.records.length)} records · ${runChangeCount(r)} changes`
-                        : r.status;
+                      : group === "attention"
+                        ? r.errorMessage ?? "Needs attention — re-pick the items"
+                        : group === "completed"
+                          ? `${fmtInt(r.records.length)} records · ${runChangeCount(r)} changes`
+                          : r.status;
                   const text =
                     group === "failed"
                       ? `Run failed for ${name}`
-                      : group === "completed"
-                        ? `Run completed for ${name}`
-                        : `Run ${r.status} for ${name}`;
+                      : group === "attention"
+                        ? `${name} needs attention`
+                        : group === "completed"
+                          ? `Run completed for ${name}`
+                          : `Run ${r.status} for ${name}`;
                   return (
                     <div
                       key={r.id}
@@ -483,6 +492,20 @@ type RunChangeEvent = ExtractionRun["changes"]["new"][number];
 function RunChangesReview({ run }: { run: ExtractionRun }) {
   const total = runChangeCount(run);
   const group = statusGroup(run.status);
+  if (group === "attention") {
+    // A drifted/blocked run has no trustworthy diff (deliberately not persisted) — show
+    // the honest reason and point the user at the fix (re-pick), never a "no changes" state.
+    return (
+      <EmptyState
+        icon="alert"
+        title="No changes recorded — this run needs attention"
+        description={
+          run.errorMessage ??
+          "This sprout stopped finding items. Re-open it and re-pick the items to fix it."
+        }
+      />
+    );
+  }
   if (total === 0) {
     return (
       <EmptyState
@@ -1425,13 +1448,16 @@ export function RunsView({
   onOpenRun: (run: ExtractionRun) => void;
   selectedRunId: string | null;
 }) {
-  const [filter, setFilter] = useState<"all" | "running" | "completed" | "failed">("all");
+  const [filter, setFilter] = useState<
+    "all" | "running" | "completed" | "attention" | "failed"
+  >("all");
   const [query, setQuery] = useState("");
 
   const counts = {
     all: runs.length,
     running: runs.filter((r) => statusGroup(r.status) === "running").length,
     completed: runs.filter((r) => statusGroup(r.status) === "completed").length,
+    attention: runs.filter((r) => statusGroup(r.status) === "attention").length,
     failed: runs.filter((r) => statusGroup(r.status) === "failed").length
   };
 
@@ -1583,6 +1609,7 @@ export function RunsView({
           { value: "all", label: "All", count: counts.all },
           { value: "running", label: "Running", count: counts.running },
           { value: "completed", label: "Completed", count: counts.completed },
+          { value: "attention", label: "Needs attention", count: counts.attention },
           { value: "failed", label: "Failed", count: counts.failed }
         ]}
       />

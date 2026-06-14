@@ -31,6 +31,7 @@ from app.observability import (
 from app.overlay_reduction import reduce_blocking_overlays
 from app.recipe_runner import extract_preview_rows
 from app.resources import ensure_bucket, make_engine, make_redis, make_s3_client, make_sessionmaker
+from app.run_health import assess_run_health, drift_message
 
 logger = structlog.get_logger(__name__)
 
@@ -65,6 +66,11 @@ HEARTBEAT_PATH = Path("/tmp/skrowt-worker-alive")
 # Headroom so a one-item page keeps the whole item (main fields + details), not just the
 # first screenful of elements. Overlays are hover-only, so more nodes add no UI clutter.
 MAX_DOM_NODES = 900
+
+# Distinguishes a populated page whose selectors broke ("drift") from a blank/error shell
+# the fetch failed to deliver ("empty"). Both quarantine when they collapse a baseline to
+# zero; this only decides which honest reason the user sees (see run_health.assess_run_health).
+_MIN_RENDER_CONTENT_BYTES = 200
 
 # Browser-side render scripts live as standalone .js files under render_scripts/ so
 # they are not subject to Python line-length and are easy to edit/lint as JS.
@@ -252,6 +258,51 @@ async def run_recipe(
             page_type=str(config.get("pageType") or recipe.page_type or "listing"),
         )
         await _persist_extracted_records(ctx, run_id, recipe_id, organization_id, rows, config)
+
+        # Before diffing, decide whether this run is trustworthy. A broken selector or an
+        # anti-bot block both extract 0 rows; diffing that against a populated baseline would
+        # persist a false "everything removed". Quarantine instead — keep the records (so the
+        # run is inspectable) but write no change events, and mark needs_attention so this run
+        # cannot become the baseline for the next one. See app/run_health.py + ADR 0014.
+        baseline_count = await _previous_completed_record_count(
+            ctx, run_id, recipe_id, organization_id
+        )
+        health = assess_run_health(
+            current_count=len(rows),
+            baseline_count=baseline_count,
+            access_blocked=bool(rendered.get("access_block")),
+            page_had_content=len(rendered["html"].strip()) > _MIN_RENDER_CONTENT_BYTES,
+        )
+        if health != "ok":
+            await _update_extraction_run(
+                ctx,
+                run_id,
+                status="needs_attention",
+                total_records=len(rows),
+                error_message=drift_message(health),
+                finished_at=datetime.now(UTC),
+            )
+            duration_seconds = time.monotonic() - started_at
+            WORKER_JOB_TOTAL.labels(kind="run_recipe", outcome="needs_attention").inc()
+            WORKER_JOB_DURATION_SECONDS.labels(
+                kind="run_recipe", outcome="needs_attention"
+            ).observe(duration_seconds)
+            logger.warning(
+                "worker_job_needs_attention",
+                status="needs_attention",
+                health=health,
+                total_records=len(rows),
+                baseline_records=baseline_count,
+                duration_ms=int(duration_seconds * 1000),
+            )
+            return {
+                "runId": run_id,
+                "status": "needs_attention",
+                "health": health,
+                "totalRecords": len(rows),
+                "changeEvents": 0,
+            }
+
         change_count = await _persist_change_events(ctx, run_id)
         await _update_extraction_run(
             ctx,
@@ -567,6 +618,33 @@ async def _persist_change_events(ctx: dict[str, Any], run_id: str) -> int:
         count = await persist_change_events_for_run(session, UUID(run_id))
         await session.commit()
         return count
+
+
+async def _previous_completed_record_count(
+    ctx: dict[str, Any], run_id: str, recipe_id: str, organization_id: str
+) -> int:
+    """Record count of the most recent *completed* run — the diff/drift baseline.
+
+    Mirrors the previous-run selection in ``persist_change_events_for_run`` (latest
+    completed run, excluding this one) so the baseline matches what the diff compares
+    against. Returns 0 when there is no prior completed run (first run can't drift).
+    """
+    async with ctx["sessionmaker"]() as session:
+        result = await session.execute(
+            select(ExtractionRun.total_records)
+            .where(
+                ExtractionRun.recipe_id == UUID(recipe_id),
+                ExtractionRun.organization_id == UUID(organization_id),
+                ExtractionRun.id != UUID(run_id),
+                ExtractionRun.status == "completed",
+            )
+            .order_by(
+                ExtractionRun.finished_at.desc().nullslast(),
+                ExtractionRun.started_at.desc().nullslast(),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() or 0
 
 
 def _record_key(row: dict[str, str], primary_key: str | None, index: int) -> str:

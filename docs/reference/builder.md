@@ -99,6 +99,15 @@ detailed new/changed/removed rows, and CSV/JSON export actions. Recent tests for
 sprout remain below the review panel. The separate **Runs** page stays as cross-sprout
 execution history.
 
+A run can finish as **Needs attention** (its own status group/badge, not Completed) when the
+sprout stopped finding items — the page changed and the selectors no longer match, or the site
+blocked the run. Such a run keeps its records for inspection but records **no changes** (the diff
+is deliberately not persisted, so a broken sprout never reports a false "everything removed").
+The run review shows an honest, code-free reason. **Recovery is by example:** the user re-opens
+the page in the builder and re-picks the items; the next successful run clears the flag and
+re-establishes the baseline. (Detection lives server-side in `run_health.py`; see
+`architecture.md` "Run statuses & the drift fail-safe" and ADR 0014.)
+
 ---
 
 ## 2. Design principles (why it's shaped this way)

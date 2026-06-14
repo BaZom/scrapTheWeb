@@ -70,7 +70,7 @@ const defaultAppearance: AppearanceSettings = {
   sproutColor: lightSprout,
   paperColor: lightPaper
 };
-const runTerminalStatuses = new Set(["completed", "failed"]);
+const runTerminalStatuses = new Set(["completed", "failed", "needs_attention"]);
 // Builder drafts are ephemeral page sessions today: a refresh threw away all mapping
 // work. We snapshot the in-progress builder here so a reload resumes exactly where the
 // user left off. Versioned so a shape change can invalidate old drafts instead of
