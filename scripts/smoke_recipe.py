@@ -4,14 +4,9 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-
-from app.recipe_runner import extract_preview_rows  # noqa: E402
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
 
@@ -60,20 +55,16 @@ def recipe_payload() -> dict[str, object]:
 
 
 def run_unit_check() -> None:
-    html = """
-    <html><body>
-      <article class="product_pod">
-        <h3><a href="catalogue/a/index.html">A Book</a></h3>
-        <p class="price_color">£10.00</p>
-      </article>
-    </body></html>
-    """
-    rows = extract_preview_rows(
-        html,
-        "article.product_pod",
-        recipe_payload()["fields"],  # type: ignore[arg-type]
+    # Extraction now runs in the browser (extract_rows.js, ADR 0015) and is verified by
+    # tests/test_extract_rows_browser.py — there's no offline Python extractor to assert here.
+    # Keep a lightweight fixture sanity check so the offline smoke still validates payload shape.
+    payload = recipe_payload()
+    fields = payload["fields"]
+    require(isinstance(fields, list) and len(fields) == 3, f"unexpected fields {fields}")
+    require(
+        payload["containerSelector"] == "article.product_pod",
+        f"unexpected payload {payload}",
     )
-    require(rows == [{"title": "A Book", "detail_url": "catalogue/a/index.html", "price": "£10.00"}], f"unexpected rows {rows}")
 
 
 def run_live_check() -> None:

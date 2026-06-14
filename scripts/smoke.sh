@@ -30,18 +30,18 @@ grep -q "0004_change_events" backend/alembic/versions/0004_change_events.py
 grep -q "0005_usage_counters" backend/alembic/versions/0005_usage_counters.py
 grep -q "/api/page-sessions" backend/app/page_sessions.py
 grep -q "/selector" backend/app/page_sessions.py
-grep -q "/preview" backend/app/page_sessions.py
+grep -q "/preview/snapshot" backend/app/page_sessions.py
 grep -q "/api/recipes" backend/app/recipes.py
 grep -q "/api/runs" backend/app/recipes.py
 grep -q "/export.csv" backend/app/recipes.py
 grep -q "/export.json" backend/app/recipes.py
 grep -q "generate_selector" backend/app/selector_generator.py
-grep -q "extract_preview_rows" backend/app/recipe_runner.py
+grep -q "querySelectorAll" backend/app/render_scripts/extract_rows.js
 grep -q "detect_changes" backend/app/change_detector.py
 grep -q "enforce_user_rate_limit" backend/app/limits.py
 grep -q "increment_usage_counter" backend/app/limits.py
 grep -q "generateSelector" frontend/lib/api.ts
-grep -q "previewPageSession" frontend/lib/api.ts
+grep -q "previewFromSnapshot" frontend/lib/api.ts
 grep -q "createRecipe" frontend/lib/api.ts
 grep -q "runRecipe" frontend/lib/api.ts
 grep -q "downloadRunExport" frontend/lib/api.ts
@@ -87,7 +87,6 @@ test -f backend/tests/test_security.py
 test -f backend/tests/test_ssrf.py
 
 SKIP_LIVE_SELECTOR_SMOKE=1 scripts/smoke_selector.py
-SKIP_LIVE_PREVIEW_SMOKE=1 scripts/smoke_preview.py
 SKIP_LIVE_RECIPE_SMOKE=1 scripts/smoke_recipe.py
 SKIP_LIVE_EXPORT_DIFF_SMOKE=1 scripts/smoke_export_diff.py
 SKIP_LIVE_LIMIT_SMOKE=1 scripts/smoke_limits.py
