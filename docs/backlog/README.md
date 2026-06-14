@@ -12,6 +12,8 @@ One file per item. (Broad system limitations / production-hardening directions l
 ## Items (by roadmap phase)
 
 **Phase 0 — core loop excellence on public listings (now):**
+- **[builder-run-hardening.md](builder-run-hardening.md)** — *next focus:* validate + harden the build→run loop across many real listing sites (the engine is unified, ADR 0015, but only tested on a few). Surfaces the real-world failure classes to fix.
+- **[sprout-save-semantics.md](sprout-save-semantics.md)** — *needs a decision:* re-saving a sprout creates a duplicate (no uniqueness, versioning infra unused) and resets the drift baseline. Decide update-vs-new before building.
 - **[alerts.md](alerts.md)** — push meaningful changes to the user (email/webhook). The remaining gap before the Phase 0 exit gate ("a user acts on a meaningful alert"). *Selector-drift recovery (ADR 0014) and run/build extraction parity (ADR 0015) are in place — the diff is trustworthy.*
 - **[builder-ui-enhancements.md](builder-ui-enhancements.md)** — preview-table polish in the builder.
 - **[ux-polish.md](ux-polish.md)** — single-item page UX + icon/spacing consistency pass.
