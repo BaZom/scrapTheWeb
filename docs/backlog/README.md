@@ -12,8 +12,8 @@ One file per item. (Broad system limitations / production-hardening directions l
 ## Items (by roadmap phase)
 
 **Phase 0 — core loop excellence on public listings (now):**
-- **[selector-drift-recovery.md](selector-drift-recovery.md)** — *precondition, not polish:* detect when a saved sprout silently stops matching and recover by example. Trustworthy alerts depend on it.
-- **[builder-ui-enhancements.md](builder-ui-enhancements.md)** — preview-table polish + dead-code cleanup in the builder. (Save-bounce + Run→Runs hand-off shipped via ADR 0011 FU11/FU14.)
+- **[alerts.md](alerts.md)** — push meaningful changes to the user (email/webhook). The remaining gap before the Phase 0 exit gate ("a user acts on a meaningful alert"). *Selector-drift recovery, the precondition, is in place — see ADR 0014 + `architecture.md`.*
+- **[builder-ui-enhancements.md](builder-ui-enhancements.md)** — preview-table polish in the builder.
 - **[ux-polish.md](ux-polish.md)** — single-item page UX + icon/spacing consistency pass.
 - **[skrowt-internal-cleanup.md](skrowt-internal-cleanup.md)** — deeper Sprout/API/internal naming cleanup and simplification.
 - **[object-storage-review.md](object-storage-review.md)** — check if/when we still need S3/MinIO object storage.
@@ -26,5 +26,6 @@ One file per item. (Broad system limitations / production-hardening directions l
 - **[browser-extension.md](browser-extension.md)** — `browser` source ("Skrowt relocated"): run the sprout in the user's own browser for fortress/login sites. **Pull-gated** (ADR 0013 Phase 2).
 - **[authenticated-sources.md](authenticated-sources.md)** — the source ladder (API → extension → `agent`). The `agent` (desktop, persistent profile, **watchlist-scoped, no proxies**) is **furthest out** (ADR 0013 Phase 3).
 
-When an item ships, move its rationale into an ADR and update the matching `docs/reference/`
-file, then delete or mark the backlog item done.
+When an item ships, move its rationale into an ADR (history) and the current behavior into the
+matching `docs/reference/` file (business + technical truth), then **delete** the backlog item.
+The backlog holds only open work — never "done" markers or shipped stubs.

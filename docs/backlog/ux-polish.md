@@ -1,14 +1,9 @@
 # Planned — builder UX polish
 
-**Status:** in progress (single-flow DONE, icon/spacing OPEN) · **Area:** builder UI
+**Status:** open · **Area:** builder UI
 
-## Single-item (detail) page design & UX — DONE (ADR 0010)
-The single-page flow (no repeating card; the user clicks values page-wide to add fields) was
-functional but rougher than the list flow. Shipped a deliberate layout + affordance pass:
-a **"Page" anchor** in the inspector (parity with the list "Item" block), a real fields-card
-**empty state**, and an **on-message Tip** (dropped the dead `href`/`src`/attribute copy).
-Frontend-only, in `builder-view.tsx` single branches. See `docs/reference/builder.md` §1.4.
-Live-stack manual eyeball still recommended.
+(The single-item/detail page design pass shipped — see ADR 0010 and `docs/reference/builder.md`
+§1.4 for current behavior.)
 
 ## Icon & spacing pass
 Tighten icon sizing/pacing, spacing rhythm, and visual consistency across the builder —

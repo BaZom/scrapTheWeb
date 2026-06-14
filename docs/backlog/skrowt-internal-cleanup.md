@@ -14,21 +14,13 @@ deliberately.
 - If product wants the API contract to say `sprouts`, design a migration plan for routes,
   schemas, database table/model names, client SDK names, metrics, docs, and backward
   compatibility.
-- ~~Remove the unused builder DOM-tree branch once confirmed no debug workflow depends on it.~~
-  **Done (2026-06):** the dead `pickerView === "nodes"` DOM-tree view + the `pickerView` prop
-  were removed (see `builder-ui-enhancements.md` §2).
 - Consider consolidating sprout/run terminology helpers so UI screens do not hand-roll labels.
-- Review legacy `scraptheweb_*` local storage keys, metrics, filenames, and docs.
-  **Audited 2026-06:**
-  - **localStorage keys** (`frontend/app/page.tsx`) — *already correct, leave as-is.* New
-    `skrowt.*` keys are written; legacy `scraptheweb.*` keys are read-then-removed via
-    `readStoredValue(newKey, legacyKey)`. This is the desired migration-read; removing the
-    legacy keys would drop returning users' saved auth/appearance/draft.
-  - **Worker heartbeat filename** — *done.* `/tmp/scraptheweb-worker-alive` →
-    `/tmp/skrowt-worker-alive` in `worker.py` + `worker_healthcheck.py` (ephemeral /tmp file,
-    no persistence/contract — safe).
-  - **Deferred — these are persistent contracts, renaming is a deliberate migration, not a
-    cleanup pass** (leave until product commits to it, then plan dashboards/data migration):
+- Finish the legacy `scraptheweb_*` rename. Do **not** touch these without a migration plan:
+  - **localStorage keys** (`frontend/app/page.tsx`) — already migrating correctly (new `skrowt.*`
+    written; legacy `scraptheweb.*` read-then-removed). Leave the legacy-read in place — removing
+    it would drop returning users' saved auth/appearance/draft.
+  - **Persistent contracts — a deliberate migration, not a cleanup pass** (leave until product
+    commits, then plan dashboards/data migration):
     - **Prometheus metric names** `scraptheweb_*_total` (`observability/metrics.py`, docs,
       `scripts/smoke_observability.py`) — renaming orphans historical series + breaks any
       existing dashboards/alerts; no easy alias.

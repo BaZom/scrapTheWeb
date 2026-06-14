@@ -10,10 +10,21 @@
 
 ## ▶ Current focus / next action (start here each session)
 
-- **Now:** Phase 0 — make the **core monitoring loop excellent on public listings** and prove a
-  real user comes back because a diff *mattered*. The make-or-break sub-item is **selector-drift
-  recovery** (a sprout that silently breaks turns alerts into lies — that's a precondition, not
-  polish).
+**Now:** Phase 0 — make the **core monitoring loop** trustworthy and complete on public listings,
+then prove a real user comes back because a diff *mattered*. Phase 0 is **not done**; the loop
+state is:
+
+| Loop stage | State |
+|---|---|
+| Build (visual sprout) | ✅ in place |
+| Monitor + diff (new/changed/removed) | ✅ in place |
+| Selector-drift recovery | ✅ in place — a broken/blocked run quarantines as `needs_attention` and writes no diff, so the diff is trustworthy; recovery is by-example re-pick. (why: ADR 0014 · how: `architecture.md`) |
+| **Alerts** | ❌ **next — not built.** Meaningful changes only land in the stored diff / Runs view; nothing is pushed. (`docs/backlog/alerts.md`) |
+| Export | ✅ in place |
+
+**Order:** alerts (next) → seek the first real user. Then the Phase 0 exit gate (a user acts on
+a meaningful alert) becomes reachable and Phase 1 (`api` BYOK + niche GTM) can open.
+
 - **Not now (deferred until explicit pull):** browser extension, private/desktop agent.
 - **Parked (needs a deal, not a build):** API resell.
 - **Dead (do not revisit):** residential proxies, raw API resell, general-monitor launch
