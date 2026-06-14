@@ -1,5 +1,11 @@
 # Browser extension — run the visual sprout in the user's own browser
 
+> **Roadmap: Phase 2, the `browser` source — DEFERRED / pull-gated (ADR 0013).** Do not start
+> until users explicitly ask for unattended/fortress monitoring **and** the
+> `fortress-feasibility-spike.md` has proved the per-user-browser thesis survives. On-demand
+> fortress collection already works manually today, so this is no longer the next build (this
+> supersedes ADR 0012's "build priority = extension"). Sequencing: `product-strategy.md`.
+
 ## Summary
 
 The browser extension is **"Skrowt relocated"** (ADR 0012): it runs the *existing* visual

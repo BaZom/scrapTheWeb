@@ -1,5 +1,9 @@
 # API Connections Backlog Plan
 
+> **Roadmap: Phase 1, the `api` source (ADR 0013).** This is **BYOK** — the customer brings
+> their own keys to data they're entitled to; we wire them into the same records/diff/alert
+> engine. Zero anti-bot/legal risk, premium B2B add-on. Sequencing: `product-strategy.md`.
+
 ## Summary
 
 Add an optional API connection feature for cases where visual website capture is blocked,

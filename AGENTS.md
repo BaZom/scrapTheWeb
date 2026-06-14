@@ -25,6 +25,12 @@ So a non-trivial change usually touches the ADR (the *why*) and the reference fi
 *current truth*) in the same commit. Start by reading `docs/reference/README.md` and
 `docs/backlog/README.md`.
 
+**For the business model, the four-source architecture, and the strict roadmap / current
+focus, read `docs/reference/product-strategy.md` first** (the *why* is ADR 0013). Each fact
+lives in exactly one layer — business+plan there, tech in `architecture.md`/`builder.md`, why
+in ADRs, market in `target-site-landscape.md` — so a session orients from CLAUDE.md →
+`product-strategy.md` and dips into a technical ref only when the task needs it.
+
 ## Context efficiency (important)
 
 Keep token usage low without losing codebase understanding:

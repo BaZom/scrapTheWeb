@@ -23,6 +23,9 @@ This rule is also recorded in `CLAUDE.md` and `AGENTS.md` so every agent/contrib
 
 ## Index
 
+- **[product-strategy.md](product-strategy.md)** — **start here for business + plan**: what
+  Skrowt is, the one-engine/four-source model, the moats, and the strict gated roadmap with a
+  "current focus / next action" block. The *why* is **ADR 0013**.
 - **[architecture.md](architecture.md)** — the whole system: components, render → extract
   pipeline, where data lives + when written, data model, the two selector matchers, caching,
   auth surface, security posture, frontend structure, testing.
@@ -40,5 +43,5 @@ This rule is also recorded in `CLAUDE.md` and `AGENTS.md` so every agent/contrib
 
 ## Related docs
 
-- `docs/adr/` — decision history (0001–0012).
+- `docs/adr/` — decision history (0001–0013).
 - `docs/backlog/` — open bugs & planned work.

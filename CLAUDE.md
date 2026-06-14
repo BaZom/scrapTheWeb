@@ -63,10 +63,18 @@ saved **run** re-fetches live HTML. Preview-from-snapshot is deterministic and m
 screenshot — intended, not a bug.
 
 ## Status & next
+- **Start here for business + plan + what's next** → `docs/reference/product-strategy.md` (the
+  one engine / four-source model, the moats, and the **strict gated roadmap** with a
+  "Current focus / next action" block at the top). Read it before proposing new work.
 - **Current behavior** → `docs/reference/` (builder, architecture). **Why/history** →
-  `docs/adr/` (current through **ADR 0012**: data-collection strategy — where extraction runs +
-  rejected alternatives; ADR 0011 = Skrowt redesign + builder follow-ups 1–15).
-  **Next work** → pull from `docs/backlog/`.
+  `docs/adr/` (current through **ADR 0013**: product strategy — one engine + pluggable sources,
+  public-first, niche GTM, rejected proxies/resell/general-clone/bulk-harvest; ADR 0012 =
+  data-collection tiers; ADR 0011 = redesign + builder FU 1–15).
+- **Next work** → the roadmap's current phase; concrete tickets in `docs/backlog/`.
+- **Avoid duplication:** business+plan lives only in `product-strategy.md`, tech only in
+  `architecture.md`/`builder.md`, why only in ADRs, market only in `target-site-landscape.md`.
+  A new session is oriented from CLAUDE.md → `product-strategy.md`; dip into a technical ref
+  only when the task needs it.
 
 ## Standing guardrails (don't relearn the hard way)
 - **No code in the builder UI.** No CSS/regex/selector strings or dev terms (`href`,

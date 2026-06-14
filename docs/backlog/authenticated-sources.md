@@ -17,12 +17,14 @@ legitimate first. Each step reuses the existing sprout config + selector/DOM ext
 engine (`backend/app/selector_generator.py`, `recipe_runner.py`,
 `render_scripts/dom_candidates.js`) — only *where rendering happens* changes.
 
-> **Refined in ADR 0012** (the *why* + the full rejected-alternatives list). The concrete v1
-> build is `browser-extension.md`; the external site map is
-> `docs/reference/target-site-landscape.md`. Tier 1 (server-side on friendly sites) is already
-> covered, so this item now tracks **Tier 2 (browser extension)** and **Tier 3 (desktop agent)**.
-> Additional rejected ideas recorded in ADR 0012: **residential proxies**, **proxy cookie
-> injection (reverse-proxy login)**, and **email-alert forwarding + parsing** (off-concept).
+> **Refined in ADR 0012** (the *why* + the full rejected-alternatives list) and sequenced by
+> **ADR 0013** / `docs/reference/product-strategy.md`. Tier 1 (`server`, friendly sites) is
+> shipped. Tier 2 (`browser`) is `browser-extension.md` — **deferred, Phase 2**. Tier 3 is the
+> **`agent`** below: desktop, persistent profile, **watchlist-scoped, no proxies** — **furthest
+> out, Phase 3**, only on real demand for unattended fortress monitoring. The external site map
+> is `docs/reference/target-site-landscape.md`. Rejected (ADR 0012/0013): **residential proxies
+> (incl. inside the agent)**, **proxy cookie injection**, **email-alert forwarding/parsing**,
+> **raw API resell**, **bulk harvesting**.
 
 ## The ladder
 
