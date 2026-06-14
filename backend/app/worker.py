@@ -247,15 +247,24 @@ async def run_recipe(
         recipe, version = await _load_recipe_version(ctx, recipe_id, organization_id)
         config = version.config
         url = str(config.get("urlPattern") or recipe.url_pattern)
+        container_selector = str(config["containerSelector"])
+        page_type = str(config.get("pageType") or recipe.page_type or "listing")
         rendered = await _render_with_playwright(
             url,
             ctx["settings"].render_navigation_timeout_ms,
+            # Single-page sprouts scope to the whole page (synthetic "body"), so there's no
+            # listing container worth waiting for.
+            wait_for_selector=(
+                None
+                if page_type == "single" or container_selector == "body"
+                else container_selector
+            ),
         )
         rows = extract_preview_rows(
             rendered["html"],
-            str(config["containerSelector"]),
+            container_selector,
             list(config["fields"]),
-            page_type=str(config.get("pageType") or recipe.page_type or "listing"),
+            page_type=page_type,
         )
         await _persist_extracted_records(ctx, run_id, recipe_id, organization_id, rows, config)
 
@@ -459,9 +468,56 @@ async def _wait_for_dom_stable(
     return last_count
 
 
+async def _autoscroll(
+    page: Any,
+    *,
+    max_scrolls: int = 12,
+    step_px: int = 1400,
+    settle_ms: int = 350,
+) -> None:
+    """Scroll to the bottom in steps to trigger lazy-loaded content, then reset to the top.
+
+    Listing pages routinely defer below-fold cards and images (``data-src``) until they scroll
+    into view. ``page.content()`` is captured without scrolling, so that content is missing from
+    *both* the build freeze and the run extraction — the user can pick it from the full-page
+    screenshot, but the saved run never sees it. Walk down the page, pausing briefly so lazy
+    loaders fire, until we reach the bottom and the scroll height stops growing, or we hit the
+    step cap (bounded so a tall/infinite-scroll page can't exhaust the job timeout). Reset to the
+    top afterwards so the full-page screenshot and element geometry stay top-anchored (matching
+    the rest of the capture). Best-effort: a scroll/evaluate hiccup must never fail the render.
+    """
+    try:
+        for _ in range(max_scrolls):
+            before = int(await page.evaluate("() => document.documentElement.scrollHeight"))
+            await page.evaluate("(y) => window.scrollBy(0, y)", step_px)
+            await page.wait_for_timeout(settle_ms)
+            after = int(await page.evaluate("() => document.documentElement.scrollHeight"))
+            at_bottom = bool(
+                await page.evaluate(
+                    "() => window.innerHeight + window.scrollY"
+                    " >= document.documentElement.scrollHeight - 2"
+                )
+            )
+            if at_bottom and after <= before:
+                break
+    except Exception:
+        logger.debug("autoscroll_incomplete", exc_info=True)
+    finally:
+        # Always return to the top, even if scrolling failed partway: dom_candidates.js records
+        # viewport-relative getBoundingClientRect() coordinates, so a page left scrolled would
+        # corrupt the builder overlay geometry. Best-effort — cleanup must never raise either.
+        try:
+            await page.evaluate("() => window.scrollTo(0, 0)")
+            await page.wait_for_timeout(150)
+        except Exception:
+            logger.debug("autoscroll_reset_incomplete", exc_info=True)
+
+
 async def _render_with_playwright(
     url: str,
     navigation_timeout_ms: int,
+    *,
+    wait_for_selector: str | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     async with async_playwright() as playwright:
@@ -504,6 +560,18 @@ async def _render_with_playwright(
             # find nothing. Wait for the DOM to re-stabilize before snapshotting.
             if overlay_dismissals:
                 await _wait_for_dom_stable(page)
+            # Wait for the saved sprout's container to actually exist before snapshotting, so an
+            # SPA listing isn't captured half-built (best-effort — the settle above + autoscroll
+            # below still apply if it never shows). Only the run passes a selector; the build has
+            # none yet.
+            if wait_for_selector:
+                try:
+                    await page.wait_for_selector(wait_for_selector, state="attached", timeout=2000)
+                except Exception:
+                    pass
+            # Trigger lazy-loaded / below-fold content before capturing HTML, screenshot, and DOM
+            # nodes — keeps the build freeze and the live run seeing the same content.
+            await _autoscroll(page)
             title = await page.title()
             html = await page.content()
             screenshot = await page.screenshot(full_page=True, type="png")
