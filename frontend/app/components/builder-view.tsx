@@ -563,16 +563,6 @@ export function BuilderView(props: BuilderProps) {
               Load page
             </Button>
           </form>
-
-          {/* Only a transient loading cue here — the URL bar is otherwise left alone for
-              future URL-related features. Page mode + pick controls moved to the right panel. */}
-          <div className="builder-status-row">
-            {props.renderBusy ? (
-              <span className="builder-status-pill builder-status-pill-live">
-                <HarvestArt src={HARVEST_ART.collecting} size={24} /> Loading page
-              </span>
-            ) : null}
-          </div>
         </div>
       </div>
 
