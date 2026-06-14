@@ -711,7 +711,6 @@ export default function Home() {
       onShapeChange: handleShapeChange,
       pickMode,
       onPickModeChange: (mode: "container" | "field") => dispatch({ type: "pick_mode_changed", mode }),
-      pickerView: "overlays" as const,
       fields,
       onRemoveField: (name: string) => dispatch({ type: "field_removed", name }),
       onStepNavigate: handleStepNavigate,

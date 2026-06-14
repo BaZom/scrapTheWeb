@@ -76,7 +76,6 @@ export type BuilderProps = {
   onShapeChange: (shape: "list" | "single") => void;
   pickMode: "container" | "field";
   onPickModeChange: (mode: "container" | "field") => void;
-  pickerView: "overlays" | "nodes";
   fields: PreviewField[];
   // Remove a field by deleting its column in the preview table (ADR 0009).
   onRemoveField: (name: string) => void;
@@ -630,7 +629,6 @@ export function BuilderView(props: BuilderProps) {
             <BuilderScreenshotLoading />
           ) : props.pageSession ? (
             props.screenshotObjectUrl ? (
-              props.pickerView === "overlays" ? (
                 <div
                   style={{
                     width: "100%",
@@ -1004,90 +1002,6 @@ export function BuilderView(props: BuilderProps) {
                     </span>
                   </div>
                 </div>
-              ) : (
-                <div style={{ maxWidth: 920, margin: "0 auto" }}>
-                  <Card style={{ overflow: "hidden" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "10px 14px",
-                        borderBottom: "1px solid var(--divider)"
-                      }}
-                    >
-                      <div style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-                        <Icon name="treeNode" size={14} style={{ color: "var(--accent-deep)" }} /> DOM tree
-                        <Badge tone="outline">{props.pageSession.domNodes.length} nodes</Badge>
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        padding: "10px 14px",
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12.5,
-                        lineHeight: 1.7,
-                        color: "var(--text-secondary)",
-                        maxHeight: 600,
-                        overflow: "auto"
-                      }}
-                    >
-                      {(props.pickMode === "field" ? fieldNodes : props.pageSession.domNodes)
-                        .slice(0, 200)
-                        .map((node) => {
-                          const active =
-                            (props.pickMode === "container" && props.selectedNode?.nodeId === node.nodeId) ||
-                            (props.pickMode === "field" && nodeIsSelectedField(node));
-                          return (
-                            <button
-                              type="button"
-                              key={node.nodeId}
-                              onClick={() =>
-                                props.pickMode === "field"
-                                  ? handleFieldPick(node)
-                                  : handleContainerPick(node)
-                              }
-                              style={{
-                                display: "block",
-                                width: "100%",
-                                textAlign: "left",
-                                padding: "3px 6px",
-                                border: 0,
-                                background: active ? "var(--accent-soft)" : "transparent",
-                                borderRadius: 4,
-                                fontFamily: "inherit",
-                                fontSize: "inherit",
-                                color: "inherit",
-                                cursor: "pointer"
-                              }}
-                            >
-                              <span style={{ color: "var(--text-faint)" }}>&lt;</span>
-                              <span style={{ color: "var(--accent-deep)", fontWeight: 600 }}>{node.tag}</span>
-                              {node.attrs.id ? (
-                                <span>
-                                  {" "}
-                                  id=<span style={{ color: "var(--info-fg)" }}>&quot;{node.attrs.id}&quot;</span>
-                                </span>
-                              ) : null}
-                              {node.classes.length > 0 ? (
-                                <span>
-                                  {" "}
-                                  class=<span style={{ color: "var(--info-fg)" }}>&quot;{node.classes.join(" ")}&quot;</span>
-                                </span>
-                              ) : null}
-                              <span style={{ color: "var(--text-faint)" }}>&gt;</span>
-                              {node.text ? (
-                                <span style={{ marginLeft: 12, color: "var(--text-muted)", fontSize: 11 }}>
-                                  {node.text.slice(0, 70)}
-                                </span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                    </div>
-                  </Card>
-                </div>
-              )
             ) : (
               <BuilderScreenshotLoading />
             )

@@ -22,18 +22,21 @@ Skrowt mono look and reads cleanly:
 Touches: the preview table block in `frontend/app/components/builder-view.tsx` and `.tbl`
 styles in `globals.css`.
 
-### 2. Remove dead code in the builder (next time)
+### 2. Remove dead code in the builder — DONE (2026-06)
 
-The redesign left a few `BuilderProps` that are no longer referenced in `builder-view.tsx`
-(verified 0 uses) — remove them and trace each back through `page.tsx` (and the reducer where
-applicable) so the prop, the wiring, and any now-orphaned state/handlers all go together:
+Audited the originally-listed dead `BuilderProps` against current code:
 
-- `onRecipeNameChange` (recipe-name input removed from the topbar)
-- `fieldSamples` (no longer read)
-- `onPickerViewChange` (no longer read; **but** `pickerView` IS still used — keep it)
-
-Verify each is truly unused end-to-end before deleting (some may still be set in `page.tsx`).
-Re-run typecheck/lint after.
+- `onRecipeNameChange` — already gone (no refs anywhere). Nothing to do.
+- `onPickerViewChange` — already gone. Its sibling **`pickerView`** was now also dead
+  (hardcoded to `"overlays"`, nothing flipped it), so the dead **"nodes" / DOM-tree picker
+  view** was removed along with the `pickerView` prop + `page.tsx` assignment (87-line deletion;
+  typecheck/lint/tests green). This also closes the "unused builder DOM-tree branch" item in
+  `skrowt-internal-cleanup.md`.
+- `fieldSamples` — **kept (not dead).** It is woven into builder **draft persistence**
+  (written into the localStorage draft and the persist effect's deps in `page.tsx`, restored in
+  the reducer, exercised by `builder-reducer.test.ts`). The original "no longer read" note was
+  stale. Removing it is a reducer-level change with test churn — out of scope for a dead-code
+  pass; revisit only if draft persistence itself is reworked.
 
 ## Notes
 

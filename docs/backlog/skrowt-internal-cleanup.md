@@ -14,7 +14,9 @@ deliberately.
 - If product wants the API contract to say `sprouts`, design a migration plan for routes,
   schemas, database table/model names, client SDK names, metrics, docs, and backward
   compatibility.
-- Remove the unused builder DOM-tree branch once confirmed no debug workflow depends on it.
+- ~~Remove the unused builder DOM-tree branch once confirmed no debug workflow depends on it.~~
+  **Done (2026-06):** the dead `pickerView === "nodes"` DOM-tree view + the `pickerView` prop
+  were removed (see `builder-ui-enhancements.md` §2).
 - Consider consolidating sprout/run terminology helpers so UI screens do not hand-roll labels.
 - Review legacy `scraptheweb_*` local storage keys, metrics, filenames, and docs. Keep aliases
   or migration reads where user data may already exist.
