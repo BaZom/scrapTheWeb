@@ -98,9 +98,13 @@ generation/preview read `domNodes` from Redis; the saved run re-fetches live HTM
   shape contract: listing sprouts scope fields to each item container; single-page sprouts
   evaluate field selectors page-wide.
 
-Both are fed selectors from the same generator, so a generated selector behaves consistently;
-the snapshot path trades fidelity (text truncation) for speed at build time. See
-[builder.md §4](builder.md).
+Both are fed selectors from the same generator, but they are **separate engines over separate
+DOM representations (browser vs. a hand-rolled Python `HTMLParser`)** and can diverge on real
+HTML — e.g. implicit `<tbody>` and optional-closing `<li>` shift `nth-of-type`, and
+`innerText` vs `textContent` differ. So a selector mapped in the builder can match different
+rows (or none) on the saved run. This is a known robustness gap with a verified diagnosis and
+fix plan: `docs/backlog/extraction-robustness.md`. The snapshot path also trades fidelity (text
+truncation) for speed at build time. See [builder.md §4](builder.md).
 
 ## Caching
 
