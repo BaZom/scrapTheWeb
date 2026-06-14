@@ -1368,103 +1368,121 @@ export function BuilderView(props: BuilderProps) {
       </div>
 
       {/* BOTTOM PANEL — builder-only preview from the screenshot snapshot. Live runs live on Runs. */}
-      <div
-        className="builder-bottom-panel"
-        style={{
-          flexShrink: 0,
-          maxHeight: 360,
-          display: "flex",
-          flexDirection: "column"
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid var(--divider)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, height: 44 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
-              Preview records
-            </span>
-            <Badge tone="outline">{previewRows.length} rows</Badge>
-          </div>
-          <div style={{ flex: 1 }} />
-        </div>
+      <PreviewRecordsPanel
+        rows={previewRows}
+        fields={props.fields}
+        busy={props.previewBusy}
+        onRemoveField={handleRemoveField}
+      />
+    </div>
+  );
+}
 
-        <div style={{ overflow: "auto", flex: 1 }}>
-          {props.previewBusy ? (
-            <BuilderPreviewLoading />
-          ) : previewRows.length > 0 ? (
-            <AnimatedPreviewDrawer open>
-              <table className="tbl" style={{ tableLayout: "auto" }}>
-                <thead>
-                  <tr>
-                    {props.fields.map((f) => (
-                      <th key={f.name}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          {f.name}
-                          <span
-                            style={{
-                              fontSize: 9.5,
-                              padding: "0 5px",
-                              borderRadius: 3,
-                              background: "var(--surface-sunken)",
-                              color: "var(--text-muted)",
-                              letterSpacing: 0,
-                              textTransform: "uppercase",
-                              fontFamily: "var(--font-mono)"
-                            }}
-                          >
-                            {f.extract}
-                          </span>
-                          {/* Remove this field by dropping its column here (ADR 0009). */}
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            style={{ width: 18, height: 18, border: 0 }}
-                            onClick={() => handleRemoveField(f.name)}
-                            title={`Remove ${f.name}`}
-                          >
-                            <Icon name="x" size={10} />
-                          </button>
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewRows.map((row, i) => (
-                    <AnimatedPreviewRow key={i} index={i}>
-                      {props.fields.map((f) => (
-                        <td
-                          key={f.name}
-                          className={f.extract === "href" || f.name === "url" ? "mono" : ""}
-                          style={{ fontSize: 12.5 }}
-                        >
-                          <span
-                            style={{
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              display: "inline-block",
-                              maxWidth: 420
-                            }}
-                          >
-                            {formatValue(row[f.name])}
-                          </span>
-                        </td>
-                      ))}
-                    </AnimatedPreviewRow>
-                  ))}
-                </tbody>
-              </table>
-            </AnimatedPreviewDrawer>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "48px 24px", textAlign: "center" }}>
-              <HarvestArt src={HARVEST_ART.emptyCard} size={104} />
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Your harvest will grow here</h3>
-              <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", maxWidth: 320, lineHeight: 1.5 }}>
-                Pick an item, choose the values to collect, then click Preview records.
-              </p>
-            </div>
-          )}
+// Builder-only preview from the screenshot snapshot (live runs live on the Runs page).
+// Purely presentational: the parent owns the data and the remove-field side effect.
+function PreviewRecordsPanel({
+  rows,
+  fields,
+  busy,
+  onRemoveField
+}: {
+  rows: PreviewResult["rows"];
+  fields: PreviewField[];
+  busy: boolean;
+  onRemoveField: (name: string) => void;
+}) {
+  return (
+    <div
+      className="builder-bottom-panel"
+      style={{ flexShrink: 0, maxHeight: 360, display: "flex", flexDirection: "column" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid var(--divider)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, height: 44 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+            Preview records
+          </span>
+          <Badge tone="outline">{rows.length} rows</Badge>
         </div>
+        <div style={{ flex: 1 }} />
+      </div>
+
+      <div style={{ overflow: "auto", flex: 1 }}>
+        {busy ? (
+          <BuilderPreviewLoading />
+        ) : rows.length > 0 ? (
+          <AnimatedPreviewDrawer open>
+            <table className="tbl" style={{ tableLayout: "auto" }}>
+              <thead>
+                <tr>
+                  {fields.map((f) => (
+                    <th key={f.name}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        {f.name}
+                        <span
+                          style={{
+                            fontSize: 9.5,
+                            padding: "0 5px",
+                            borderRadius: 3,
+                            background: "var(--surface-sunken)",
+                            color: "var(--text-muted)",
+                            letterSpacing: 0,
+                            textTransform: "uppercase",
+                            fontFamily: "var(--font-mono)"
+                          }}
+                        >
+                          {f.extract}
+                        </span>
+                        {/* Remove this field by dropping its column here (ADR 0009). */}
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          style={{ width: 18, height: 18, border: 0 }}
+                          onClick={() => onRemoveField(f.name)}
+                          title={`Remove ${f.name}`}
+                        >
+                          <Icon name="x" size={10} />
+                        </button>
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <AnimatedPreviewRow key={i} index={i}>
+                    {fields.map((f) => (
+                      <td
+                        key={f.name}
+                        className={f.extract === "href" || f.name === "url" ? "mono" : ""}
+                        style={{ fontSize: 12.5 }}
+                      >
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            display: "inline-block",
+                            maxWidth: 420
+                          }}
+                        >
+                          {formatValue(row[f.name])}
+                        </span>
+                      </td>
+                    ))}
+                  </AnimatedPreviewRow>
+                ))}
+              </tbody>
+            </table>
+          </AnimatedPreviewDrawer>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "48px 24px", textAlign: "center" }}>
+            <HarvestArt src={HARVEST_ART.emptyCard} size={104} />
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Your harvest will grow here</h3>
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", maxWidth: 320, lineHeight: 1.5 }}>
+              Pick an item, choose the values to collect, then click Preview records.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
