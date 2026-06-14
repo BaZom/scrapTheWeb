@@ -6,7 +6,7 @@ from pathlib import Path
 from app.config import get_settings
 from app.resources import make_redis
 
-HEARTBEAT_PATH = Path("/tmp/scraptheweb-worker-alive")
+HEARTBEAT_PATH = Path("/tmp/skrowt-worker-alive")
 
 
 async def check() -> int:

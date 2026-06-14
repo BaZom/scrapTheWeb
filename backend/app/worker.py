@@ -61,7 +61,7 @@ async def _block_ad_route(route: Any) -> None:
             pass
 
 
-HEARTBEAT_PATH = Path("/tmp/scraptheweb-worker-alive")
+HEARTBEAT_PATH = Path("/tmp/skrowt-worker-alive")
 # Headroom so a one-item page keeps the whole item (main fields + details), not just the
 # first screenful of elements. Overlays are hover-only, so more nodes add no UI clutter.
 MAX_DOM_NODES = 900
