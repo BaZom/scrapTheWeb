@@ -687,10 +687,6 @@ async def _to_thread(function: Callable[..., Any], **kwargs: Any) -> Any:
     return await asyncio.to_thread(function, **kwargs)
 
 
-def _elapsed_ms(started_at: float) -> int:
-    return round((time.monotonic() - started_at) * 1000)
-
-
 def _write_heartbeat() -> None:
     HEARTBEAT_PATH.write_text(str(time.time()), encoding="utf-8")
 
