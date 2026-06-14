@@ -298,7 +298,7 @@ def _export_columns(records: list[ExtractedRecord], configured_fields: list[str]
 
 
 def _safe_filename(run: ExtractionRun, suffix: str) -> str:
-    return f"scraptheweb-run-{run.id}.{suffix}"
+    return f"skrowt-run-{run.id}.{suffix}"
 
 
 async def _configured_field_names(run: ExtractionRun, session: AsyncSession) -> list[str]:
@@ -516,7 +516,7 @@ async def get_run(
 # cap only matters for an abandoned/stuck job. Poll interval matches the old client poll.
 _RUN_STREAM_MAX_SECONDS = 300
 _RUN_STREAM_POLL_SECONDS = 1.0
-_RUN_TERMINAL_STATES = ("completed", "failed")
+_RUN_TERMINAL_STATES = ("completed", "failed", "needs_attention")
 
 
 @router.get("/api/runs/{run_id}/events")

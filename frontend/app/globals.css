@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* =========================================================
-   ScrapTheWeb — Design Tokens & Base
+   Skrowt — Design Tokens & Base
    Ported from /design/styles.css (1:1)
    ========================================================= */
 
@@ -954,26 +954,11 @@ select.input {
   flex-shrink: 0;
 }
 
-.builder-recipe-chip {
+.builder-topbar-spacer {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.builder-recipe-input {
-  min-width: 0;
-  width: 150px;
-  height: 30px;
-  border: 0;
-  background: transparent;
-  outline: none;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.builder-recipe-input:focus {
-  border-bottom: 1px solid var(--border-strong);
 }
 
 .builder-stepper-wrap {
@@ -1202,7 +1187,7 @@ select.input {
     justify-items: center;
   }
 
-  .builder-recipe-chip,
+  .builder-topbar-spacer,
   .builder-actions {
     justify-content: center;
   }

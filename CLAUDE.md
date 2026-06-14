@@ -1,10 +1,9 @@
-# CLAUDE.md — ScrapTheWeb
+# CLAUDE.md — Skrowt
 
-Visual recipe builder for extracting structured data from public listing/detail pages.
+Visual sprout builder for extracting structured data from public listing/detail pages.
 Next.js frontend (auth, visual picker, field mapping, preview, runs, exports) · FastAPI
-backend (tenant auth, recipe/run APIs, limits, SSRF guards) · arq worker (Playwright
-render + extraction) · Postgres · Redis · S3-compatible storage. Visible brand is **Skrowt**;
-the codebase/repo/APIs keep the internal name **ScrapTheWeb**. See `README.md`.
+backend (tenant auth, saved-sprout/run APIs, limits, SSRF guards) · arq worker (Playwright
+render + extraction) · Postgres · Redis · S3-compatible storage. See `README.md`.
 
 ## Commands
 - **Run the stack:** `docker compose up --build` (frontend :3000, API :8000, worker
@@ -12,6 +11,10 @@ the codebase/repo/APIs keep the internal name **ScrapTheWeb**. See `README.md`.
 - **Backend tests/lint** (host python lacks pytest/ruff — use the container):
   `docker compose run --rm --no-deps -v "$PWD/backend:/app" api pytest -q` · `... ruff check .`.
   Host `python3` *does* have `playwright` and can import pure modules like `app.selector_generator`.
+- **Browser-engine tests need Chromium**, which only the **worker** image has (the `api` image
+  doesn't, so they silently *skip* under the command above). Run them explicitly:
+  `docker compose run --rm --no-deps -v "$PWD/backend:/app" worker pytest -q tests/test_extract_rows_browser.py`
+  (these verify the run's `extract_rows.js` extraction — the Phase B engine; ADR 0015).
 - **Frontend** (`cd frontend`): `npm test` (Vitest) · `npm run typecheck` · `npm run lint`
   · `npm run build`. Note: `next lint` rewrites `next-env.d.ts` (it has an intentional
   custom comment) — `git checkout -- frontend/next-env.d.ts` after linting.
@@ -32,9 +35,12 @@ the codebase/repo/APIs keep the internal name **ScrapTheWeb**. See `README.md`.
   - So a non-trivial change typically touches **both** the ADR (why) and the reference (current
     truth) in the same commit. (`AGENTS.md` mirrors these rules for non-Claude agents — keep
     the two in sync if you change conventions.)
-- **Context efficiency:** when continuing in the same thread, rely on existing context — don't
-  broadly reread the same docs each turn. Use targeted reads (`rg -n`, then `sed -n`/`nl -ba`
-  around exact lines); avoid whole-file reads and large diffs unless needed.
+- **Context efficiency:** orient from this file → the top of
+  `docs/reference/product-strategy.md` when strategy/priority matters, then read only the
+  task-specific backlog item and the smallest relevant reference/ADR sections. Do **not** start
+  sessions by broadly reading README indexes, all ADRs, or full technical refs unless the task
+  area is unclear. Use targeted reads (`rg -n`, then `sed -n`/`nl -ba` around exact lines);
+  avoid whole-file reads and large diffs unless needed.
 - **Small, isolated commits**, one logical change each. Commit pre-existing uncommitted work
   separately *before* starting new work.
 - **Do NOT add a Co-Authored-By / agent trailer** to commit messages (user preference).
@@ -47,9 +53,10 @@ the codebase/repo/APIs keep the internal name **ScrapTheWeb**. See `README.md`.
   blocks ad/tracker requests (`RENDER_BLOCK_ADS`), waits for consent-rebuild via
   `_wait_for_dom_stable`.
 - **Selectors/preview:** `backend/app/selector_generator.py` (`generate_selector` →
-  selector/matchCount/strategy/matchedNodeIds; honors `page_type`/single-page scope) and
-  `recipe_runner.py` (authoritative HTML extraction for saved runs). Endpoints in
-  `backend/app/page_sessions.py`.
+  selector/matchCount/strategy/matchedNodeIds; honors `page_type`/single-page scope; build-time
+  snapshot preview). The saved **run** extracts in the browser via
+  `render_scripts/extract_rows.js` (same engine the builder picks against; ADR 0015). Endpoints
+  in `backend/app/page_sessions.py`.
 - **Builder UI:** `frontend/app/page.tsx` (orchestration) drives `components/builder-view.tsx`;
   flow state is a reducer in `frontend/lib/builder-reducer.ts` (don't add scattered useState);
   API client in `lib/api.ts`. Run progress streams via SSE (`streamRunEvents`) with polling
@@ -58,15 +65,24 @@ the codebase/repo/APIs keep the internal name **ScrapTheWeb**. See `README.md`.
 ## Data flow — where things are saved (and when)
 Important for reasoning about "stale/wrong data": **nothing is written to DB/storage while
 building fields or previewing.** Two write moments: **Render** → `screenshot.png` + `page.html`
-to S3, `domNodes` + candidates to Redis (TTL), a `PageSession` row to Postgres. **Save recipe**
-→ the recipe to Postgres. Build-time selector gen/preview read the snapshot from Redis/S3; the
+to S3, `domNodes` + candidates to Redis (TTL), a `PageSession` row to Postgres. **Save sprout**
+→ the sprout to Postgres. Build-time selector gen/preview read the snapshot from Redis/S3; the
 saved **run** re-fetches live HTML. Preview-from-snapshot is deterministic and matches the
 screenshot — intended, not a bug.
 
 ## Status & next
+- **Start here for business + plan + what's next** → `docs/reference/product-strategy.md` (the
+  one engine / four-source model, the moats, and the **strict gated roadmap** with a
+  "Current focus / next action" block at the top). Read it before proposing new work.
 - **Current behavior** → `docs/reference/` (builder, architecture). **Why/history** →
-  `docs/adr/` (current through **ADR 0011**: the Skrowt redesign + builder follow-ups 1–14).
-  **Next work** → pull from `docs/backlog/`.
+  `docs/adr/` (current through **ADR 0013**: product strategy — one engine + pluggable sources,
+  public-first, niche GTM, rejected proxies/resell/general-clone/bulk-harvest; ADR 0012 =
+  data-collection tiers; ADR 0011 = redesign + builder FU 1–15).
+- **Next work** → the roadmap's current phase; concrete tickets in `docs/backlog/`.
+- **Avoid duplication:** business+plan lives only in `product-strategy.md`, tech only in
+  `architecture.md`/`builder.md`, why only in ADRs, market only in `target-site-landscape.md`.
+  A new session is oriented from CLAUDE.md → `product-strategy.md`; dip into a technical ref
+  only when the task needs it.
 
 ## Standing guardrails (don't relearn the hard way)
 - **No code in the builder UI.** No CSS/regex/selector strings or dev terms (`href`,

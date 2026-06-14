@@ -1,6 +1,6 @@
 # RUNBOOK
 
-Operational guide for ScrapTheWeb. Covers local development, environment
+Operational guide for Skrowt. Covers local development, environment
 configuration, migrations, deployment, incident response, and the staging
 launch checklist.
 
@@ -160,7 +160,7 @@ a new target needs to be denied:
 ### Rate-limit pressure
 
 `scraptheweb_page_render_requests_total{outcome="rate_limited"}` and the
-recipe run + export equivalents indicate per-user pressure. Increase
+sprout-run + export equivalents indicate per-user pressure. Increase
 `*_RATE_LIMIT_PER_HOUR` or `ORG_*_QUOTA_PER_MONTH` and restart the API.
 
 ## Backups + retention

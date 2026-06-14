@@ -1,11 +1,11 @@
 # Architecture — current state (source of truth)
 
-ScrapTheWeb is a multi-tenant web app for building and running visual extraction recipes
+Skrowt is a multi-tenant web app for building and running visual extraction sprouts
 against public listing/detail pages. This is the single source of truth for the architecture;
 the builder's UI/flow detail lives in [builder.md](builder.md).
 
 Product loop: render a URL → reduce blocking overlays → capture screenshot + DOM → user picks
-the repeating item and fields → generate selectors & preview → save the recipe → run on
+the repeating item and fields → generate selectors & preview → save the sprout → run on
 demand from the Run Test workspace → review real records + changes → export CSV/JSON.
 
 ## System components
@@ -13,9 +13,9 @@ demand from the Run Test workspace → review real records + changes → export 
 | Component | Tech | Role |
 |-----------|------|------|
 | **Frontend** | Next.js (app router), React, Tailwind, Zod | Client workbench: auth, render, builder, preview, runs, diffs, exports. `frontend/`. |
-| **API** | FastAPI (Python 3.11) | Auth, tenancy, page sessions, selectors, preview, recipes, runs, exports, limits, SSRF, health, metrics. `backend/app/`. |
+| **API** | FastAPI (Python 3.11) | Auth, tenancy, page sessions, selectors, preview, sprouts, runs, exports, limits, SSRF, health, metrics. `backend/app/`. |
 | **Worker** | arq + Playwright | Renders pages, captures DOM + screenshot, reduces overlays. Shares the backend image; Prometheus metrics on :9100. `backend/app/worker.py`. |
-| **Postgres** | SQLAlchemy (async) | Durable source of truth: users/orgs, sessions, recipes, runs, records, tokens, API keys, usage counters. |
+| **Postgres** | SQLAlchemy (async) | Durable source of truth: users/orgs, sessions, saved sprouts, runs, records, tokens, API keys, usage counters. |
 | **Redis** | redis-py / arq | Job queue, rate-limit windows, and the short-lived `domNodes`/session payload. |
 | **S3 / MinIO** | boto3 | Rendered `screenshot.png` + `page.html` artifacts (MinIO locally). |
 
@@ -50,31 +50,59 @@ demand from the Run Test workspace → review real records + changes → export 
    from **Redis** and run the in-house matcher. List previews return one row per matched
    item container; single-page previews return one page-wide row
    (`selector_generator.py`).
-5. **Save**: the recipe (item selector + fields) → **Postgres** (`recipes` + `recipe_versions`).
-6. **Run**: the worker re-fetches the live page via the same render path, `recipe_runner.py`
-   parses the HTML and extracts records (inside matched containers for listing recipes, or as
-   one page-wide row for single-page recipes), diffs vs the previous run, persists
-   records/changes; CSV/JSON export streams from persisted records.
+5. **Save**: the sprout (item selector + fields) → **Postgres** (`recipes` + `recipe_versions`).
+6. **Run**: the worker re-fetches the live page via the same render path and extracts records
+   **in the browser** (`render_scripts/extract_rows.js` — the same DOM/CSS engine the builder
+   picked against; inside matched containers for listing sprouts, or one page-wide row for
+   single-page sprouts). The render auto-scrolls first (run only) to load lazy content. Before
+   diffing, the run is **health-checked**
+   (`run_health.py`): if it was blocked (anti-bot) or its extraction collapsed to zero against
+   a populated baseline (selector drift), the run is marked **`needs_attention`**, its records
+   are kept for inspection, and **no diff is persisted** (so a broken sprout never emits a false
+   "everything removed"). Otherwise it diffs vs the previous *completed* run, persists
+   records/changes, and is marked `completed`; CSV/JSON export streams from persisted records.
+
+### Run statuses & the drift fail-safe
+
+`extraction_runs.status` is `queued → running →` one of `completed` / `failed` /
+**`needs_attention`**. The diff (`change_detector.detect_changes`) is pure set math: previous-N
+vs current-0 ⇒ N "removed" events. A silently-broken selector (or an anti-bot block) extracts
+zero rows, so diffing it would persist a mass-removal lie. `run_recipe` therefore calls
+`assess_run_health(...)` *before* `persist_change_events_for_run`:
+
+- **baseline** = the previous `completed` run's `total_records` (same run the diff compares
+  against — no separate store, no build-time `matchCount`, no migration);
+- **`blocked`** = the render's existing anti-bot signal (`_detect_access_block`, previously
+  computed and discarded on the run path);
+- **`drift` / `empty`** = baseline > 0 **and** extraction ≤ `DRIFT_FLOOR_RATIO` of baseline
+  (starts at 0 ⇒ only a total collapse to zero trips it). **Both quarantine** — diffing either
+  would persist a false mass-removal; `page_had_content` only picks the reason (content present
+  but items vanished ⇒ `drift`, re-pick; blank/near-empty shell ⇒ `empty`, often transient).
+
+All three (`blocked`/`drift`/`empty`) map to the `needs_attention` run status, which is excluded
+from baseline selection, so one bad run can't poison the next comparison. Recovery is **by example** (the standing guardrail): the user re-opens the page
+and re-picks; the next successful run re-establishes the baseline. Rationale: **ADR 0014**.
 
 ## Where data lives, and when it's written
 
 Nothing is written while building fields or previewing. **Two write moments only:** *Render*
-(S3 + Redis + a `page_sessions` row) and *Save recipe* (Postgres). Build-time selector
+(S3 + Redis + a `page_sessions` row) and *Save sprout* (Postgres). Build-time selector
 generation/preview read `domNodes` from Redis; the saved run re-fetches live HTML.
 
-## Two selector matchers (intentional)
+## Extraction engines (build vs run)
 
-- **Snapshot matcher** — `selector_generator.py`, over the flat `domNodes`. Fast, in-memory,
-  a bounded CSS subset (`>`-chained `tag`/`.class`/`#id`/`[attr]`/`:nth-of-type`). Used at
-  build time: `generate_selector`, `preview_from_snapshot`. For list pages, preview row count
-  follows the matched container count instead of a hidden fixed sample limit.
-- **HTML matcher** — `recipe_runner.py`, over parsed HTML. Authoritative. Used by the saved
-  **run** (and the legacy `/preview`), where full fidelity matters. It preserves the builder's
-  shape contract: listing recipes scope fields to each item container; single-page recipes
-  evaluate field selectors page-wide.
+The saved **run** extracts in the **browser** (`render_scripts/extract_rows.js`,
+`querySelectorAll`/`innerText`) — the real DOM/CSS engine the builder picked against. This is the
+authoritative path and it can't diverge from what the user mapped: malformed HTML (implicit
+`<tbody>`, optional-closing `<li>`) and text (`innerText` vs `textContent`) are handled exactly
+as a browser handles them. (Why + the prior divergence this replaced: **ADR 0015**.)
 
-Both are fed selectors from the same generator, so a generated selector behaves consistently;
-the snapshot path trades fidelity (text truncation) for speed at build time. See
+The **build** still uses the in-memory **snapshot matcher** — `selector_generator.py` over the
+flat `domNodes` (a bounded CSS subset: `>`-chained `tag`/`.class`/`#id`/`[attr]`/`:nth-of-type`),
+for `generate_selector` and `preview_from_snapshot`. It's the fast no-fetch picking/preview aid;
+it trades fidelity (text truncation, a node-count budget) for speed, so on large pages the
+preview can show fewer fully-populated rows than the run will collect — the preview table hides
+the empty shells and says "run to collect all listings." The run is the source of truth. See
 [builder.md §4](builder.md).
 
 ## Caching
@@ -94,7 +122,7 @@ membership checks on org-scoped paths):
   single-use, TTL-bounded auth tokens.
 - `api_keys` — hashed `sk_*` keys with display prefix, last-used + revocation state.
 - `page_sessions` — rendered URL, status, screenshot key, HTML key, DOM cache identity.
-- `websites`, `recipes`, `recipe_versions` — saved extraction definitions (selectors, fields,
+- `websites`, `recipes`, `recipe_versions` — saved sprout definitions (selectors, fields,
   pagination, dedup settings).
 - `extraction_runs`, `extracted_records`, `change_events` — run history + diff output.
 - `usage_counters` — monthly quota accounting per org and metric.
@@ -105,7 +133,7 @@ The builder uses a **frozen screenshot + DOM overlay picker**, not a live embedd
 Before capture, Playwright runs a backend-only overlay-reduction pass looking for non-invasive
 dismissal controls (reject, necessary-only, close, later, skip, "no thanks") across the page
 and frames, and sends `Escape` for stuck modals. It does **not** store cookies/localStorage,
-does not accept-all, and adds no user-authored steps. Recipe runs use the same render path, so
+does not accept-all, and adds no user-authored steps. Sprout runs use the same render path, so
 preview and run benefit equally. Overlay-dismissal metadata remains backend metadata; it is not
 shown as a builder status chip.
 
@@ -143,10 +171,10 @@ should wire a real email provider.
 Next.js app router. `frontend/lib/api.ts` owns the HTTP client + Zod response schemas; auth
 state is persisted locally and refreshed on expiry. The builder is a compact client-side
 workbench (`app/page.tsx` + `app/components/builder-view.tsx`) for configuring and snapshot
-previewing recipes. Live execution is started and reviewed in the Run Test screen
+previewing sprouts. Live execution is started and reviewed in the Run Test screen
 (`product-screens.tsx`), which shows real extracted records, change diffs, recent tests for
-the selected recipe, and exports; Runs remains cross-recipe execution history. A future
-iteration could split these into dedicated routes (login, settings, recipe create/detail, run
+the selected sprout, and exports; Runs remains cross-sprout execution history. A future
+iteration could split these into dedicated routes (login, settings, sprout create/detail, run
 detail) without changing backend contracts. Builder internals: [builder.md](builder.md).
 
 ## Testing strategy

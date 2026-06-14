@@ -9,9 +9,11 @@ that the builder **preview reads from the Redis `domNodes` snapshot** (no HTML p
 is actually needed, and if so, for what and for how long.
 
 ## What still uses S3 today
-- **`page.html`** — the legacy `/preview` endpoint (`recipe_runner` parse). The fast
-  `/preview/snapshot` path does **not** use it. Confirm whether anything else relies on the
-  stored HTML.
+- **`page.html`** — **read by nothing as of ADR 0015.** Its only reader was the `/preview`
+  endpoint, now removed; the run extracts live in the browser and the build preview uses the
+  Redis snapshot. The stored HTML (and the orphaned `page_html_cache` subsystem, see
+  `skrowt-internal-cleanup.md`) is now a candidate for removal — confirm nothing else reads it,
+  then stop writing it.
 - **`screenshot.png`** — served to the builder canvas (`GET /page-sessions/{id}/screenshot`)
   while building. Needed during the session, but does it need to be *durable*?
 
@@ -28,6 +30,7 @@ A decision (record in an ADR): what object storage is for, what moves to ephemer
 and the retention/TTL policy. Update `docs/reference/architecture.md` accordingly.
 
 ## Where to look
-- `backend/app/page_sessions.py` (`_load_page_session_html`, the screenshot endpoint, render
-  persistence), `backend/app/worker.py` (what it writes to S3), `recipe_runner.py` (HTML use),
-  `page_html_cache.py`, and `docs/reference/architecture.md` (data-flow / write moments).
+- `backend/app/page_sessions.py` (`_load_page_session_html` — now orphaned, the screenshot
+  endpoint, render persistence), `backend/app/worker.py` (what it writes to S3),
+  `page_html_cache.py` (orphaned, ADR 0015), and `docs/reference/architecture.md` (data-flow /
+  write moments).

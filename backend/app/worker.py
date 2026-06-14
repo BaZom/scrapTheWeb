@@ -29,8 +29,8 @@ from app.observability import (
     start_worker_metrics_server,
 )
 from app.overlay_reduction import reduce_blocking_overlays
-from app.recipe_runner import extract_preview_rows
 from app.resources import ensure_bucket, make_engine, make_redis, make_s3_client, make_sessionmaker
+from app.run_health import assess_run_health, drift_message
 
 logger = structlog.get_logger(__name__)
 
@@ -61,10 +61,15 @@ async def _block_ad_route(route: Any) -> None:
             pass
 
 
-HEARTBEAT_PATH = Path("/tmp/scraptheweb-worker-alive")
+HEARTBEAT_PATH = Path("/tmp/skrowt-worker-alive")
 # Headroom so a one-item page keeps the whole item (main fields + details), not just the
 # first screenful of elements. Overlays are hover-only, so more nodes add no UI clutter.
 MAX_DOM_NODES = 900
+
+# Distinguishes a populated page whose selectors broke ("drift") from a blank/error shell
+# the fetch failed to deliver ("empty"). Both quarantine when they collapse a baseline to
+# zero; this only decides which honest reason the user sees (see run_health.assess_run_health).
+_MIN_RENDER_CONTENT_BYTES = 200
 
 # Browser-side render scripts live as standalone .js files under render_scripts/ so
 # they are not subject to Python line-length and are easy to edit/lint as JS.
@@ -241,17 +246,70 @@ async def run_recipe(
         recipe, version = await _load_recipe_version(ctx, recipe_id, organization_id)
         config = version.config
         url = str(config.get("urlPattern") or recipe.url_pattern)
+        container_selector = str(config["containerSelector"])
+        page_type = str(config.get("pageType") or recipe.page_type or "listing")
+        is_single = page_type == "single" or container_selector == "body"
         rendered = await _render_with_playwright(
             url,
             ctx["settings"].render_navigation_timeout_ms,
+            # Single-page sprouts scope to the whole page (synthetic "body"), so there's no
+            # listing container worth waiting for.
+            wait_for_selector=None if is_single else container_selector,
+            # Extract in the browser with the same engine the builder used (see extract_rows.js).
+            extract_spec={
+                "containerSelector": container_selector,
+                "fields": list(config["fields"]),
+                "pageType": page_type,
+                "limit": None,
+            },
         )
-        rows = extract_preview_rows(
-            rendered["html"],
-            str(config["containerSelector"]),
-            list(config["fields"]),
-            page_type=str(config.get("pageType") or recipe.page_type or "listing"),
-        )
+        rows = rendered["rows"] or []
         await _persist_extracted_records(ctx, run_id, recipe_id, organization_id, rows, config)
+
+        # Before diffing, decide whether this run is trustworthy. A broken selector or an
+        # anti-bot block both extract 0 rows; diffing that against a populated baseline would
+        # persist a false "everything removed". Quarantine instead — keep the records (so the
+        # run is inspectable) but write no change events, and mark needs_attention so this run
+        # cannot become the baseline for the next one. See app/run_health.py + ADR 0014.
+        baseline_count = await _previous_completed_record_count(
+            ctx, run_id, recipe_id, organization_id
+        )
+        health = assess_run_health(
+            current_count=len(rows),
+            baseline_count=baseline_count,
+            access_blocked=bool(rendered.get("access_block")),
+            page_had_content=len(rendered["html"].strip()) > _MIN_RENDER_CONTENT_BYTES,
+        )
+        if health != "ok":
+            await _update_extraction_run(
+                ctx,
+                run_id,
+                status="needs_attention",
+                total_records=len(rows),
+                error_message=drift_message(health),
+                finished_at=datetime.now(UTC),
+            )
+            duration_seconds = time.monotonic() - started_at
+            WORKER_JOB_TOTAL.labels(kind="run_recipe", outcome="needs_attention").inc()
+            WORKER_JOB_DURATION_SECONDS.labels(
+                kind="run_recipe", outcome="needs_attention"
+            ).observe(duration_seconds)
+            logger.warning(
+                "worker_job_needs_attention",
+                status="needs_attention",
+                health=health,
+                total_records=len(rows),
+                baseline_records=baseline_count,
+                duration_ms=int(duration_seconds * 1000),
+            )
+            return {
+                "runId": run_id,
+                "status": "needs_attention",
+                "health": health,
+                "totalRecords": len(rows),
+                "changeEvents": 0,
+            }
+
         change_count = await _persist_change_events(ctx, run_id)
         await _update_extraction_run(
             ctx,
@@ -408,9 +466,57 @@ async def _wait_for_dom_stable(
     return last_count
 
 
+async def _autoscroll(
+    page: Any,
+    *,
+    max_scrolls: int = 12,
+    step_px: int = 1400,
+    settle_ms: int = 350,
+) -> None:
+    """Scroll to the bottom in steps to trigger lazy-loaded content, then reset to the top.
+
+    Listing pages routinely defer below-fold cards and images (``data-src``) until they scroll
+    into view. ``page.content()`` is captured without scrolling, so that content is missing from
+    *both* the build freeze and the run extraction — the user can pick it from the full-page
+    screenshot, but the saved run never sees it. Walk down the page, pausing briefly so lazy
+    loaders fire, until we reach the bottom and the scroll height stops growing, or we hit the
+    step cap (bounded so a tall/infinite-scroll page can't exhaust the job timeout). Reset to the
+    top afterwards so the full-page screenshot and element geometry stay top-anchored (matching
+    the rest of the capture). Best-effort: a scroll/evaluate hiccup must never fail the render.
+    """
+    try:
+        for _ in range(max_scrolls):
+            before = int(await page.evaluate("() => document.documentElement.scrollHeight"))
+            await page.evaluate("(y) => window.scrollBy(0, y)", step_px)
+            await page.wait_for_timeout(settle_ms)
+            after = int(await page.evaluate("() => document.documentElement.scrollHeight"))
+            at_bottom = bool(
+                await page.evaluate(
+                    "() => window.innerHeight + window.scrollY"
+                    " >= document.documentElement.scrollHeight - 2"
+                )
+            )
+            if at_bottom and after <= before:
+                break
+    except Exception:
+        logger.debug("autoscroll_incomplete", exc_info=True)
+    finally:
+        # Always return to the top, even if scrolling failed partway: dom_candidates.js records
+        # viewport-relative getBoundingClientRect() coordinates, so a page left scrolled would
+        # corrupt the builder overlay geometry. Best-effort — cleanup must never raise either.
+        try:
+            await page.evaluate("() => window.scrollTo(0, 0)")
+            await page.wait_for_timeout(150)
+        except Exception:
+            logger.debug("autoscroll_reset_incomplete", exc_info=True)
+
+
 async def _render_with_playwright(
     url: str,
     navigation_timeout_ms: int,
+    *,
+    wait_for_selector: str | None = None,
+    extract_spec: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     async with async_playwright() as playwright:
@@ -453,6 +559,22 @@ async def _render_with_playwright(
             # find nothing. Wait for the DOM to re-stabilize before snapshotting.
             if overlay_dismissals:
                 await _wait_for_dom_stable(page)
+            # Wait for the saved sprout's container to actually exist before snapshotting, so an
+            # SPA listing isn't captured half-built (best-effort — the settle above + autoscroll
+            # below still apply if it never shows). Only the run passes a selector; the build has
+            # none yet.
+            if wait_for_selector:
+                try:
+                    await page.wait_for_selector(wait_for_selector, state="attached", timeout=2000)
+                except Exception:
+                    pass
+            # Trigger lazy-loaded / below-fold content before extracting — RUN ONLY. The builder
+            # needs a STATIC, top-anchored snapshot: scrolling reflows lazy images (shifting the
+            # screenshot under the overlay boxes) and inflates the node set past the capture
+            # budget (dropping an item's field nodes). The run extracts data, not coordinates, so
+            # it can scroll freely; the build (no extract_spec) must not.
+            if extract_spec is not None:
+                await _autoscroll(page)
             title = await page.title()
             html = await page.content()
             screenshot = await page.screenshot(full_page=True, type="png")
@@ -465,17 +587,37 @@ async def _render_with_playwright(
                 title,
                 body_text,
             )
-            # Candidate extraction is best-effort: a JS hiccup here must NOT discard the
-            # screenshot/HTML we already captured, so degrade to empty lists on error.
-            try:
-                evaluated = await page.evaluate(_render_script("dom_candidates.js"), MAX_DOM_NODES)
-            except Exception:
-                logger.exception("dom_candidate_extraction_failed")
-                evaluated = {}
-            dom_nodes = evaluated.get("domNodes", []) if isinstance(evaluated, dict) else []
-            container_candidates = (
-                evaluated.get("candidates", []) if isinstance(evaluated, dict) else []
-            )
+            # A run (extract_spec given) extracts rows here in the browser, using the same DOM +
+            # CSS engine the builder picked against — so the run can't diverge from the build.
+            # The builder render (no extract_spec) instead collects the candidate/DOM-node set
+            # for picking. They're mutually exclusive: a run doesn't need candidates, a build
+            # doesn't extract.
+            rows: list[dict[str, str]] | None = None
+            dom_nodes: list[Any] = []
+            container_candidates: list[Any] = []
+            if extract_spec is not None:
+                # extract_rows.js swallows bad selectors (-> empty cell), so a throw here is a
+                # real extractor/script/context failure, NOT "0 rows". Let it propagate so the
+                # run is marked failed — masking it as an empty success would hide a broken
+                # deploy/script behind a health-check that waves through 0 rows on a first run.
+                try:
+                    extracted = await page.evaluate(_render_script("extract_rows.js"), extract_spec)
+                except Exception:
+                    logger.exception("row_extraction_failed")
+                    raise
+                rows = extracted if isinstance(extracted, list) else []
+            else:
+                try:
+                    evaluated = await page.evaluate(
+                        _render_script("dom_candidates.js"), MAX_DOM_NODES
+                    )
+                except Exception:
+                    logger.exception("dom_candidate_extraction_failed")
+                    evaluated = {}
+                dom_nodes = evaluated.get("domNodes", []) if isinstance(evaluated, dict) else []
+                container_candidates = (
+                    evaluated.get("candidates", []) if isinstance(evaluated, dict) else []
+                )
             return {
                 "title": title,
                 "html": html,
@@ -484,6 +626,7 @@ async def _render_with_playwright(
                 "container_candidates": container_candidates,
                 "overlay_dismissals": overlay_dismissals,
                 "access_block": access_block,
+                "rows": rows,
             }
         finally:
             await browser.close()
@@ -569,6 +712,33 @@ async def _persist_change_events(ctx: dict[str, Any], run_id: str) -> int:
         return count
 
 
+async def _previous_completed_record_count(
+    ctx: dict[str, Any], run_id: str, recipe_id: str, organization_id: str
+) -> int:
+    """Record count of the most recent *completed* run — the diff/drift baseline.
+
+    Mirrors the previous-run selection in ``persist_change_events_for_run`` (latest
+    completed run, excluding this one) so the baseline matches what the diff compares
+    against. Returns 0 when there is no prior completed run (first run can't drift).
+    """
+    async with ctx["sessionmaker"]() as session:
+        result = await session.execute(
+            select(ExtractionRun.total_records)
+            .where(
+                ExtractionRun.recipe_id == UUID(recipe_id),
+                ExtractionRun.organization_id == UUID(organization_id),
+                ExtractionRun.id != UUID(run_id),
+                ExtractionRun.status == "completed",
+            )
+            .order_by(
+                ExtractionRun.finished_at.desc().nullslast(),
+                ExtractionRun.started_at.desc().nullslast(),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() or 0
+
+
 def _record_key(row: dict[str, str], primary_key: str | None, index: int) -> str:
     if primary_key:
         value = row.get(primary_key)
@@ -607,10 +777,6 @@ async def _update_extraction_run(
 
 async def _to_thread(function: Callable[..., Any], **kwargs: Any) -> Any:
     return await asyncio.to_thread(function, **kwargs)
-
-
-def _elapsed_ms(started_at: float) -> int:
-    return round((time.monotonic() - started_at) * 1000)
 
 
 def _write_heartbeat() -> None:

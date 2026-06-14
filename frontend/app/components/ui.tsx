@@ -132,6 +132,7 @@ const STATUS_MAP: Record<string, { tone: BadgeTone; dot?: boolean; label: string
   error: { tone: "danger", dot: true, label: "Error" },
   needs: { tone: "warning", dot: true, label: "Needs review" },
   "needs review": { tone: "warning", dot: true, label: "Needs review" },
+  needs_attention: { tone: "warning", dot: true, label: "Needs attention" },
   draft: { tone: "outline", dot: true, label: "Draft" },
   paused: { tone: "outline", dot: true, label: "Paused" },
   new: { tone: "success", dot: true, label: "new" },

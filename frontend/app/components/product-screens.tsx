@@ -80,11 +80,16 @@ function runChangeCount(run: ExtractionRun): number {
   return run.changes.new.length + run.changes.changed.length + run.changes.removed.length;
 }
 
-function statusGroup(status: string): "completed" | "running" | "failed" | "pending" {
+function statusGroup(
+  status: string
+): "completed" | "running" | "failed" | "attention" | "pending" {
   const s = status.toLowerCase();
   if (s === "completed" || s === "succeeded" || s === "ok") return "completed";
   if (s === "running") return "running";
   if (s === "failed" || s === "error") return "failed";
+  // A drifted/blocked run extracted nothing trustworthy — surface it for a re-pick,
+  // never as a normal completed run (its diff was deliberately not persisted).
+  if (s === "needs_attention" || s === "needs" || s === "paused") return "attention";
   return "pending";
 }
 
@@ -163,7 +168,7 @@ export function DashboardView({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16, marginBottom: 20 }}>
-        <KPI icon="recipe" label="Saved recipes" value={fmtInt(recipes.length)} />
+        <KPI icon="recipe" label="Saved sprouts" value={fmtInt(recipes.length)} />
         <KPI icon="runs" label="Runs" value={fmtInt(runs.length)} />
         <KPI icon="records" label="Records extracted" value={fmtInt(totalRecords)} />
         <KPI icon="diff" label="Changes detected" value={fmtInt(totalChanges)} />
@@ -174,7 +179,7 @@ export function DashboardView({
           <Card>
             <CardHeader
               title="Latest runs"
-              sub="Execution history across all recipes"
+              sub="Execution history across all sprouts"
               action={
                 <Button variant="ghost" size="sm" trailingIcon="arrowRight" onClick={() => onNavigate?.("runs")}>
                   All runs
@@ -185,7 +190,7 @@ export function DashboardView({
               <EmptyState
                 icon="runs"
                 title="No runs yet"
-                description="Save a recipe in the Builder and run it once to populate this list."
+                description="Save a sprout in the Builder and run it once to populate this list."
                 action={
                   <Button variant="primary" icon="wand" onClick={onCreateRecipe}>
                     Open Builder
@@ -196,7 +201,7 @@ export function DashboardView({
               <table className="tbl">
                 <thead>
                   <tr>
-                    <th style={{ width: "44%" }}>Recipe</th>
+                    <th style={{ width: "44%" }}>Sprout</th>
                     <th>Started</th>
                     <th className="num">Records</th>
                     <th className="num">Changes</th>
@@ -309,7 +314,7 @@ export function DashboardView({
               Turn a public page into structured records
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 14 }}>
-              Paste a URL, point at a repeated card, map fields. Save it as a recipe and run it on demand.
+              Paste a URL, point at a repeated card, map fields. Save it as a sprout and run it on demand.
             </div>
             <WorkflowDiagram />
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -324,7 +329,7 @@ export function DashboardView({
             <div style={{ padding: "4px 0" }}>
               {latestRuns.length === 0 ? (
                 <div style={{ padding: "20px 18px", fontSize: 13, color: "var(--text-muted)" }}>
-                  No activity yet. Run a recipe to populate the feed.
+                  No activity yet. Run a sprout to populate the feed.
                 </div>
               ) : (
                 latestRuns.map((r, i) => {
@@ -335,15 +340,19 @@ export function DashboardView({
                   const meta =
                     group === "failed"
                       ? r.errorMessage ?? "Run failed"
-                      : group === "completed"
-                        ? `${fmtInt(r.records.length)} records · ${runChangeCount(r)} changes`
-                        : r.status;
+                      : group === "attention"
+                        ? r.errorMessage ?? "Needs attention — re-pick the items"
+                        : group === "completed"
+                          ? `${fmtInt(r.records.length)} records · ${runChangeCount(r)} changes`
+                          : r.status;
                   const text =
                     group === "failed"
                       ? `Run failed for ${name}`
-                      : group === "completed"
-                        ? `Run completed for ${name}`
-                        : `Run ${r.status} for ${name}`;
+                      : group === "attention"
+                        ? `${name} needs attention`
+                        : group === "completed"
+                          ? `Run completed for ${name}`
+                          : `Run ${r.status} for ${name}`;
                   return (
                     <div
                       key={r.id}
@@ -412,7 +421,7 @@ export function DashboardView({
                   <div style={{ marginTop: 2, fontWeight: 550 }}>{role}</div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-muted)" }}>Recipes</div>
+                  <div style={{ color: "var(--text-muted)" }}>Sprouts</div>
                   <div style={{ marginTop: 2, fontWeight: 550 }} className="tabular">
                     {fmtInt(recipes.length)}
                   </div>
@@ -483,6 +492,20 @@ type RunChangeEvent = ExtractionRun["changes"]["new"][number];
 function RunChangesReview({ run }: { run: ExtractionRun }) {
   const total = runChangeCount(run);
   const group = statusGroup(run.status);
+  if (group === "attention") {
+    // A drifted/blocked run has no trustworthy diff (deliberately not persisted) — show
+    // the honest reason and point the user at the fix (re-pick), never a "no changes" state.
+    return (
+      <EmptyState
+        icon="alert"
+        title="No changes recorded — this run needs attention"
+        description={
+          run.errorMessage ??
+          "This sprout stopped finding items. Re-open it and re-pick the items to fix it."
+        }
+      />
+    );
+  }
   if (total === 0) {
     return (
       <EmptyState
@@ -604,7 +627,7 @@ function RunChangeRow({ event, kind }: { event: RunChangeEvent; kind: RunChangeK
 function WorkflowDiagram() {
   const steps: Array<{ icon: IconName; label: string }> = [
     { icon: "monitor", label: "Source" },
-    { icon: "recipe", label: "Recipe" },
+    { icon: "recipe", label: "Sprout" },
     { icon: "runs", label: "Run" },
     { icon: "records", label: "Records" },
     { icon: "diff", label: "Changes" },
@@ -734,23 +757,23 @@ export function RecipesView({
       <WorkspaceNotice error={error} loading={loading} />
       <div className="page-hero">
         <div>
-          <h2>Recipes</h2>
+          <h2>Sprouts</h2>
           <div className="sub">
-            Saved extraction templates. A recipe defines a container selector and field mappings — it doesn&apos;t schedule itself.
+            Saved extraction templates. A sprout defines a page pattern and field mappings — it doesn&apos;t schedule itself.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <Button variant="primary" icon="plus" onClick={onOpenBuilder}>
-            New recipe
+            New sprout
           </Button>
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16, marginBottom: 16 }}>
-        <KPI icon="recipe" label="Saved recipes" value={fmtInt(recipes.length)} />
+        <KPI icon="recipe" label="Saved sprouts" value={fmtInt(recipes.length)} />
         <KPI icon="checkCircle" label="Active" value={fmtInt(counts.active)} />
         <KPI icon="edit" label="Draft" value={fmtInt(counts.draft)} />
-        <KPI icon="hash" label="Avg fields per recipe" value={avgFields} />
+        <KPI icon="hash" label="Avg fields per sprout" value={avgFields} />
       </div>
 
       <Tabs
@@ -768,7 +791,7 @@ export function RecipesView({
         <div className="search-box" style={{ width: 280, height: 30 }}>
           <Icon name="search" size={14} />
           <input
-            placeholder="Search recipes by name or URL…"
+            placeholder="Search sprouts by name or URL…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -780,10 +803,10 @@ export function RecipesView({
         <Card>
           <EmptyState
             icon="recipe"
-            title={recipes.length === 0 ? "No recipes yet" : "No matches"}
+            title={recipes.length === 0 ? "No sprouts yet" : "No matches"}
             description={
               recipes.length === 0
-                ? "Build your first extraction recipe from any public listing page."
+                ? "Build your first sprout from any public listing page."
                 : "Try clearing filters or search."
             }
             action={
@@ -800,7 +823,7 @@ export function RecipesView({
           <table className="tbl">
             <thead>
               <tr>
-                <th style={{ width: "30%" }}>Recipe</th>
+                <th style={{ width: "30%" }}>Sprout</th>
                 <th>Domain</th>
                 <th>Page type</th>
                 <th className="num">Fields</th>
@@ -912,7 +935,7 @@ export function MonitorsView({
               Scheduled monitoring with diff-based alerts
             </h3>
             <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: 13.5, maxWidth: 540 }}>
-              Pick a recipe, give it a schedule, and we&apos;ll keep extracting in the background. You&apos;ll see new, changed, and removed records — and get an email or webhook when something interesting happens.
+              Pick a sprout, give it a schedule, and we&apos;ll keep extracting in the background. You&apos;ll see new, changed, and removed records — and get an email or webhook when something interesting happens.
             </p>
             <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
               {["Hourly", "Daily", "Weekly", "Custom cron"].map((s) => (
@@ -982,7 +1005,7 @@ export function MonitorsView({
         </div>
       </Card>
 
-      <CardHeader title="Source candidates" sub="Your saved recipes — these are the URLs we'll schedule once monitoring ships." />
+      <CardHeader title="Source candidates" sub="Your saved sprouts — these are the URLs we'll schedule once monitoring ships." />
 
       <div
         style={{
@@ -1274,11 +1297,11 @@ export function RunTestView({
       {selectedRecipe ? (
         <>
           <Card style={{ marginBottom: 18 }}>
-            <CardHeader title="Recipe to test" sub={`${selectedHost} · ${selectedRecipe.pageType}`} />
+            <CardHeader title="Sprout to test" sub={`${selectedHost} · ${selectedRecipe.pageType}`} />
             <div style={{ padding: "0 18px 18px", display: "grid", gap: 14 }}>
               <div style={{ display: "grid", gridTemplateColumns: "minmax(260px, 1fr) auto", gap: 12, alignItems: "end" }}>
                 <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>
-                  Recipe
+                  Sprout
                   <select
                     value={selectedRecipe.id}
                     onChange={(event) => onSelectRecipe(event.target.value)}
@@ -1328,7 +1351,7 @@ export function RunTestView({
               <EmptyState
                 icon="runs"
                 title="No test run yet"
-                description="Run this recipe once to fetch live data."
+                description="Run this sprout once to fetch live data."
               />
             </Card>
           )}
@@ -1393,8 +1416,8 @@ export function RunTestView({
         <Card>
           <EmptyState
             icon="recipe"
-            title="No recipes yet"
-            description="Save a recipe in the Builder before running a live test."
+            title="No sprouts yet"
+            description="Save a sprout in the Builder before running a live test."
             action={
               <Button variant="primary" icon="wand" onClick={onOpenBuilder}>
                 Open Builder
@@ -1425,13 +1448,16 @@ export function RunsView({
   onOpenRun: (run: ExtractionRun) => void;
   selectedRunId: string | null;
 }) {
-  const [filter, setFilter] = useState<"all" | "running" | "completed" | "failed">("all");
+  const [filter, setFilter] = useState<
+    "all" | "running" | "completed" | "attention" | "failed"
+  >("all");
   const [query, setQuery] = useState("");
 
   const counts = {
     all: runs.length,
     running: runs.filter((r) => statusGroup(r.status) === "running").length,
     completed: runs.filter((r) => statusGroup(r.status) === "completed").length,
+    attention: runs.filter((r) => statusGroup(r.status) === "attention").length,
     failed: runs.filter((r) => statusGroup(r.status) === "failed").length
   };
 
@@ -1583,6 +1609,7 @@ export function RunsView({
           { value: "all", label: "All", count: counts.all },
           { value: "running", label: "Running", count: counts.running },
           { value: "completed", label: "Completed", count: counts.completed },
+          { value: "attention", label: "Needs attention", count: counts.attention },
           { value: "failed", label: "Failed", count: counts.failed }
         ]}
       />
@@ -1591,7 +1618,7 @@ export function RunsView({
         <div className="search-box" style={{ width: 280, height: 30 }}>
           <Icon name="search" size={14} />
           <input
-            placeholder="Search by run ID or recipe…"
+            placeholder="Search by run ID or sprout…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -1606,7 +1633,7 @@ export function RunsView({
             title={runs.length === 0 ? "No runs yet" : "No matches"}
             description={
               runs.length === 0
-                ? "Run a saved recipe from the Recipes page to populate the history."
+                ? "Run a saved sprout from the Sprouts page to populate the history."
                 : "Try clearing filters or search."
             }
           />
@@ -1617,7 +1644,7 @@ export function RunsView({
             <thead>
               <tr>
                 <th>Run</th>
-                <th style={{ width: "26%" }}>Recipe</th>
+                <th style={{ width: "26%" }}>Sprout</th>
                 <th>Source</th>
                 <th>Started</th>
                 <th className="num">Duration</th>
@@ -1764,7 +1791,7 @@ export function ExportsView({
               Exports are generated from completed runs
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              Failed or queued runs don&apos;t appear here. To export from a saved recipe, run it once from Run Test.
+              Failed or queued runs don&apos;t appear here. To export from a saved sprout, run it once from Run Test.
             </div>
           </div>
         </div>
@@ -1789,7 +1816,7 @@ export function ExportsView({
             title={completed.length === 0 ? "No exports available" : "No matches"}
             description={
               completed.length === 0
-                ? "Run a recipe and wait for it to complete. Completed runs become exportable."
+                ? "Run a sprout and wait for it to complete. Completed runs become exportable."
                 : "Try clearing the search."
             }
           />
@@ -1800,7 +1827,7 @@ export function ExportsView({
             <thead>
               <tr>
                 <th>Run</th>
-                <th style={{ width: "26%" }}>Recipe</th>
+                <th style={{ width: "26%" }}>Sprout</th>
                 <th>Source</th>
                 <th className="num">Records</th>
                 <th>Completed</th>

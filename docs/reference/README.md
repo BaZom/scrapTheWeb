@@ -1,6 +1,6 @@
 # Reference — current state (source of truth)
 
-This folder describes **how ScrapTheWeb works right now** — the current features, flows,
+This folder describes **how Skrowt works right now** — the current features, flows,
 architecture, files, and the concepts behind them. It is the **source of truth**: if the code
 and a doc here disagree, that's a bug in one of them, and the doc is meant to be kept current.
 
@@ -23,10 +23,13 @@ This rule is also recorded in `CLAUDE.md` and `AGENTS.md` so every agent/contrib
 
 ## Index
 
+- **[product-strategy.md](product-strategy.md)** — **start here for business + plan**: what
+  Skrowt is, the one-engine/four-source model, the moats, and the strict gated roadmap with a
+  "current focus / next action" block. The *why* is **ADR 0013**.
 - **[architecture.md](architecture.md)** — the whole system: components, render → extract
   pipeline, where data lives + when written, data model, the two selector matchers, caching,
   auth surface, security posture, frontend structure, testing.
-- **[builder.md](builder.md)** — the recipe builder in depth: the end-to-end UI flow, the
+- **[builder.md](builder.md)** — the sprout builder in depth: the end-to-end UI flow, the
   no-code design principles, the reducer state machine, the selection model, selectors &
   extraction, the files/classes involved, and the concepts behind them.
 - **[observability.md](observability.md)** — logs, metrics, traces, Sentry, health checks.
@@ -34,9 +37,11 @@ This rule is also recorded in `CLAUDE.md` and `AGENTS.md` so every agent/contrib
 - **[production-readiness.md](production-readiness.md)** — broad limitations and directions to
   harden before/at production scale. (Concrete open bugs + specific planned tickets live in
   **`docs/backlog/`**, not here.)
+- **[target-site-landscape.md](target-site-landscape.md)** — external market map of German
+  vehicle sites and *how* Skrowt can collect from each (manual vs scheduled, anti-bot, API +
+  cost). Decisions behind the tiers: **ADR 0012**.
 
 ## Related docs
 
-- `docs/adr/` — decision history (0001–0009).
+- `docs/adr/` — decision history (0001–0013).
 - `docs/backlog/` — open bugs & planned work.
-- `docs/adr/` — decision history (0001–0009).

@@ -5,11 +5,11 @@ scale. Grouped by area; not in strict priority order. (Decision history for ship
 in `docs/adr/`. Concrete, actionable tickets — open bugs and specific planned work — live in
 `docs/backlog/`.)
 
-## Builder UX & recipe quality
-- **Server-side recipe drafts.** Drafts are `localStorage` only (per-tab, per-device). A
+## Builder UX & sprout quality
+- **Server-side sprout drafts.** Drafts are `localStorage` only (per-tab, per-device). A
   server draft (schema + endpoints) would survive device switches and team handoff.
 - **Field transforms.** Post-process extracted values with no-code presets (trim, "numbers
-  only", strip currency, first line, date parse). Touches `recipe_runner.py` + a per-field UI.
+  only", strip currency, first line, date parse). Touches `render_scripts/extract_rows.js` + a per-field UI.
 - **Pattern refinement.** The current builder supports pick/re-pick, but not broadening or
   excluding matched item sets. Add a no-code refinement model before relying on difficult
   mixed-card pages.

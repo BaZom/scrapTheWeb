@@ -22,7 +22,6 @@ from app.limits import (
 from app.models import Membership, PageSession, User
 from app.observability import PAGE_RENDER_REQUEST_COUNTER
 from app.page_html_cache import PageHtmlCache
-from app.recipe_runner import extract_preview_rows
 from app.resources import make_s3_client
 from app.selector_generator import (
     SelectorMode,
@@ -138,20 +137,6 @@ class PreviewField(BaseModel):
     selector: str = Field(min_length=1, max_length=512)
     extract: ExtractType
     attribute: str | None = Field(default=None, max_length=80)
-
-
-class PreviewRequest(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    containerSelector: str = Field(min_length=1, max_length=512)
-    fields: list[PreviewField] = Field(min_length=1, max_length=20)
-
-
-class PreviewResponse(BaseModel):
-    model_config = ConfigDict(strict=True)
-
-    rows: list[dict[str, str]]
-    rowCount: int
 
 
 class SnapshotPick(BaseModel):
@@ -452,26 +437,6 @@ async def page_session_selector(
     return SelectorResponse.model_validate(selector_result)
 
 
-@router.post("/{session_id}/preview", response_model=PreviewResponse)
-async def page_session_preview(
-    session_id: UUID,
-    payload: PreviewRequest,
-    request: Request,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> PreviewResponse:
-    page_session = await _org_scoped_page_session(session_id, user, session)
-    cache = getattr(request.app.state, "page_html_cache", None)
-    html = await _load_page_session_html(page_session, settings, cache)
-    rows = extract_preview_rows(
-        html,
-        payload.containerSelector,
-        [field.model_dump() for field in payload.fields],
-    )
-    return PreviewResponse(rows=rows, rowCount=len(rows))
-
-
 @router.post("/{session_id}/preview/snapshot", response_model=SnapshotPreviewResponse)
 async def page_session_preview_snapshot(
     session_id: UUID,
@@ -482,8 +447,8 @@ async def page_session_preview_snapshot(
 ) -> SnapshotPreviewResponse:
     # Fast preview straight from the render snapshot (ADR 0009): no S3 fetch, no HTML
     # re-parse. Generates each picked field's selector and reads its value from domNodes,
-    # over every matched item — enough to build + verify a recipe. The saved run still
-    # extracts from freshly-fetched HTML (recipe_runner), where full fidelity matters.
+    # over every matched item — enough to build + verify a recipe. The saved run extracts
+    # live in the browser (extract_rows.js, ADR 0015), where full fidelity matters.
     await _org_scoped_page_session(session_id, user, session)
     session_payload = await _load_page_session_payload(request, session_id)
     raw_nodes = session_payload.get("domNodes", [])

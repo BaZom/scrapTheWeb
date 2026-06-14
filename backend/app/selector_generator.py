@@ -72,7 +72,7 @@ def preview_from_snapshot(
     """Fast preview straight from the render snapshot — no S3 fetch, no HTML re-parse.
 
     The render already captured every element's text/href/src into ``domNodes`` (ADR 0009).
-    For *building and verifying* a recipe against this example page, that snapshot is enough,
+    For *building and verifying* a sprout against this example page, that snapshot is enough,
     so we generate each picked field's selector and read its value from the snapshot itself,
     over every matched item. The *saved run* still extracts from freshly-fetched HTML — that's
     where full fidelity matters; preview values here are the snapshot's (text capped ~160ch).

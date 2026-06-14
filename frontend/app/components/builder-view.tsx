@@ -76,12 +76,9 @@ export type BuilderProps = {
   onShapeChange: (shape: "list" | "single") => void;
   pickMode: "container" | "field";
   onPickModeChange: (mode: "container" | "field") => void;
-  pickerView: "overlays" | "nodes";
-  onPickerViewChange: (view: "overlays" | "nodes") => void;
   fields: PreviewField[];
   // Remove a field by deleting its column in the preview table (ADR 0009).
   onRemoveField: (name: string) => void;
-  fieldSamples: Record<string, string>;
   onStepNavigate: (target: number) => void;
   preview: PreviewResult | null;
   previewBusy: boolean;
@@ -91,7 +88,6 @@ export type BuilderProps = {
     picks: { nodeId: string; extract: ExtractType; name: string; value: string }[]
   ) => void;
   recipeName: string;
-  onRecipeNameChange: (value: string) => void;
   savedRecipe: Recipe | null;
   recipeBusy: boolean;
   onSaveRecipe: () => void;
@@ -491,10 +487,10 @@ export function BuilderView(props: BuilderProps) {
     <div className="builder-root">
       {/* TOP: flow + actions, matching the Skrowt harvest workbench. */}
       <div className="builder-topbar">
-        {/* Left grid column intentionally empty (keeps the stepper centred). The recipe name
+        {/* Left grid column intentionally empty (keeps the stepper centred). The sprout name
             auto-derives on render (reducer `render_succeeded` → `suggestedName`); the sidebar
             carries the brand, so no title/Draft chip is needed here. */}
-        <div className="builder-recipe-chip" />
+        <div className="builder-topbar-spacer" />
 
         <div className="builder-stepper-wrap">
           <HarvestStepper steps={STEPS} current={step} onStepClick={props.onStepNavigate} />
@@ -508,7 +504,7 @@ export function BuilderView(props: BuilderProps) {
             icon="play"
             disabled={!props.savedRecipe || props.recipeBusy}
             onClick={props.onOpenRunTest}
-            title={props.savedRecipe ? "Open the live test workspace for this recipe" : "Save the recipe first"}
+            title={props.savedRecipe ? "Open the live test workspace for this sprout" : "Save the sprout first"}
           >
             Test run
           </Button>
@@ -526,13 +522,13 @@ export function BuilderView(props: BuilderProps) {
             onClick={props.onSaveRecipe}
             title={
               props.savedRecipe
-                ? "Recipe saved"
+                ? "Sprout saved"
                 : !props.preview
                   ? "Preview records first to see the data, then save"
                   : undefined
             }
           >
-            {props.recipeBusy ? "Saving…" : props.savedRecipe ? "Saved" : "Save recipe"}
+            {props.recipeBusy ? "Saving…" : props.savedRecipe ? "Saved" : "Save sprout"}
           </Button>
         </div>
       </div>
@@ -564,19 +560,9 @@ export function BuilderView(props: BuilderProps) {
               disabled={props.renderBusy}
               className="builder-reload-button"
             >
-              {props.renderBusy ? "Loading…" : "Reload"}
+              Load page
             </Button>
           </form>
-
-          {/* Only a transient loading cue here — the URL bar is otherwise left alone for
-              future URL-related features. Page mode + pick controls moved to the right panel. */}
-          <div className="builder-status-row">
-            {props.renderBusy ? (
-              <span className="builder-status-pill builder-status-pill-live">
-                <HarvestArt src={HARVEST_ART.collecting} size={24} /> Loading page
-              </span>
-            ) : null}
-          </div>
         </div>
       </div>
 
@@ -633,7 +619,6 @@ export function BuilderView(props: BuilderProps) {
             <BuilderScreenshotLoading />
           ) : props.pageSession ? (
             props.screenshotObjectUrl ? (
-              props.pickerView === "overlays" ? (
                 <div
                   style={{
                     width: "100%",
@@ -1007,90 +992,6 @@ export function BuilderView(props: BuilderProps) {
                     </span>
                   </div>
                 </div>
-              ) : (
-                <div style={{ maxWidth: 920, margin: "0 auto" }}>
-                  <Card style={{ overflow: "hidden" }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "10px 14px",
-                        borderBottom: "1px solid var(--divider)"
-                      }}
-                    >
-                      <div style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-                        <Icon name="treeNode" size={14} style={{ color: "var(--accent-deep)" }} /> DOM tree
-                        <Badge tone="outline">{props.pageSession.domNodes.length} nodes</Badge>
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        padding: "10px 14px",
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12.5,
-                        lineHeight: 1.7,
-                        color: "var(--text-secondary)",
-                        maxHeight: 600,
-                        overflow: "auto"
-                      }}
-                    >
-                      {(props.pickMode === "field" ? fieldNodes : props.pageSession.domNodes)
-                        .slice(0, 200)
-                        .map((node) => {
-                          const active =
-                            (props.pickMode === "container" && props.selectedNode?.nodeId === node.nodeId) ||
-                            (props.pickMode === "field" && nodeIsSelectedField(node));
-                          return (
-                            <button
-                              type="button"
-                              key={node.nodeId}
-                              onClick={() =>
-                                props.pickMode === "field"
-                                  ? handleFieldPick(node)
-                                  : handleContainerPick(node)
-                              }
-                              style={{
-                                display: "block",
-                                width: "100%",
-                                textAlign: "left",
-                                padding: "3px 6px",
-                                border: 0,
-                                background: active ? "var(--accent-soft)" : "transparent",
-                                borderRadius: 4,
-                                fontFamily: "inherit",
-                                fontSize: "inherit",
-                                color: "inherit",
-                                cursor: "pointer"
-                              }}
-                            >
-                              <span style={{ color: "var(--text-faint)" }}>&lt;</span>
-                              <span style={{ color: "var(--accent-deep)", fontWeight: 600 }}>{node.tag}</span>
-                              {node.attrs.id ? (
-                                <span>
-                                  {" "}
-                                  id=<span style={{ color: "var(--info-fg)" }}>&quot;{node.attrs.id}&quot;</span>
-                                </span>
-                              ) : null}
-                              {node.classes.length > 0 ? (
-                                <span>
-                                  {" "}
-                                  class=<span style={{ color: "var(--info-fg)" }}>&quot;{node.classes.join(" ")}&quot;</span>
-                                </span>
-                              ) : null}
-                              <span style={{ color: "var(--text-faint)" }}>&gt;</span>
-                              {node.text ? (
-                                <span style={{ marginLeft: 12, color: "var(--text-muted)", fontSize: 11 }}>
-                                  {node.text.slice(0, 70)}
-                                </span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                    </div>
-                  </Card>
-                </div>
-              )
             ) : (
               <BuilderScreenshotLoading />
             )
@@ -1098,7 +999,7 @@ export function BuilderView(props: BuilderProps) {
             <div style={{ display: "grid", placeItems: "center", padding: 60 }}>
               <Card className="card-pad" style={{ maxWidth: 520, textAlign: "center" }}>
                 <Badge tone="accent" dot>
-                  Recipe builder
+                  Sprout builder
                 </Badge>
                 <HarvestArt
                   src={HARVEST_ART.emptyStateGrow}
@@ -1457,103 +1358,149 @@ export function BuilderView(props: BuilderProps) {
       </div>
 
       {/* BOTTOM PANEL — builder-only preview from the screenshot snapshot. Live runs live on Runs. */}
-      <div
-        className="builder-bottom-panel"
-        style={{
-          flexShrink: 0,
-          maxHeight: 360,
-          display: "flex",
-          flexDirection: "column"
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid var(--divider)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, height: 44 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
-              Preview records
-            </span>
-            <Badge tone="outline">{previewRows.length} rows</Badge>
-          </div>
-          <div style={{ flex: 1 }} />
-        </div>
+      <PreviewRecordsPanel
+        rows={previewRows}
+        fields={props.fields}
+        busy={props.previewBusy}
+        onRemoveField={handleRemoveField}
+      />
+    </div>
+  );
+}
 
-        <div style={{ overflow: "auto", flex: 1 }}>
-          {props.previewBusy ? (
-            <BuilderPreviewLoading />
-          ) : previewRows.length > 0 ? (
-            <AnimatedPreviewDrawer open>
-              <table className="tbl" style={{ tableLayout: "auto" }}>
-                <thead>
-                  <tr>
-                    {props.fields.map((f) => (
-                      <th key={f.name}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          {f.name}
-                          <span
-                            style={{
-                              fontSize: 9.5,
-                              padding: "0 5px",
-                              borderRadius: 3,
-                              background: "var(--surface-sunken)",
-                              color: "var(--text-muted)",
-                              letterSpacing: 0,
-                              textTransform: "uppercase",
-                              fontFamily: "var(--font-mono)"
-                            }}
-                          >
-                            {f.extract}
-                          </span>
-                          {/* Remove this field by dropping its column here (ADR 0009). */}
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            style={{ width: 18, height: 18, border: 0 }}
-                            onClick={() => handleRemoveField(f.name)}
-                            title={`Remove ${f.name}`}
-                          >
-                            <Icon name="x" size={10} />
-                          </button>
-                        </span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewRows.map((row, i) => (
-                    <AnimatedPreviewRow key={i} index={i}>
-                      {props.fields.map((f) => (
-                        <td
-                          key={f.name}
-                          className={f.extract === "href" || f.name === "url" ? "mono" : ""}
-                          style={{ fontSize: 12.5 }}
-                        >
-                          <span
-                            style={{
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              display: "inline-block",
-                              maxWidth: 420
-                            }}
-                          >
-                            {formatValue(row[f.name])}
-                          </span>
-                        </td>
-                      ))}
-                    </AnimatedPreviewRow>
-                  ))}
-                </tbody>
-              </table>
-            </AnimatedPreviewDrawer>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "48px 24px", textAlign: "center" }}>
-              <HarvestArt src={HARVEST_ART.emptyCard} size={104} />
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Your harvest will grow here</h3>
-              <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", maxWidth: 320, lineHeight: 1.5 }}>
-                Pick an item, choose the values to collect, then click Preview records.
-              </p>
-            </div>
-          )}
+// Builder-only preview from the screenshot snapshot (live runs live on the Runs page).
+// Purely presentational: the parent owns the data and the remove-field side effect.
+function PreviewRecordsPanel({
+  rows,
+  fields,
+  busy,
+  onRemoveField
+}: {
+  rows: PreviewResult["rows"];
+  fields: PreviewField[];
+  busy: boolean;
+  onRemoveField: (name: string) => void;
+}) {
+  // The snapshot preview can leave later matched items as empty shells on large pages (their
+  // detail nodes fall outside the build-time capture budget); the saved RUN extracts them all.
+  // Hide the all-empty rows and point the user to a run, instead of showing blank rows.
+  const populated = rows.filter((row) =>
+    fields.some((f) => String(row[f.name] ?? "").trim() !== "")
+  );
+  const hiddenCount = rows.length - populated.length;
+  return (
+    <div
+      className="builder-bottom-panel"
+      style={{ flexShrink: 0, maxHeight: 360, display: "flex", flexDirection: "column" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid var(--divider)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, height: 44 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+            Preview records
+          </span>
+          <Badge tone="outline">{rows.length} matched</Badge>
         </div>
+        <div style={{ flex: 1 }} />
+      </div>
+
+      <div style={{ overflow: "auto", flex: 1 }}>
+        {busy ? (
+          <BuilderPreviewLoading />
+        ) : rows.length > 0 ? (
+          <AnimatedPreviewDrawer open>
+            <table className="tbl" style={{ tableLayout: "auto" }}>
+              <thead>
+                <tr>
+                  {fields.map((f) => (
+                    <th key={f.name}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        {f.name}
+                        <span
+                          style={{
+                            fontSize: 9.5,
+                            padding: "0 5px",
+                            borderRadius: 3,
+                            background: "var(--surface-sunken)",
+                            color: "var(--text-muted)",
+                            letterSpacing: 0,
+                            textTransform: "uppercase",
+                            fontFamily: "var(--font-mono)"
+                          }}
+                        >
+                          {f.extract}
+                        </span>
+                        {/* Remove this field by dropping its column here (ADR 0009). */}
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          style={{ width: 18, height: 18, border: 0 }}
+                          onClick={() => onRemoveField(f.name)}
+                          title={`Remove ${f.name}`}
+                        >
+                          <Icon name="x" size={10} />
+                        </button>
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {populated.map((row, i) => (
+                  <AnimatedPreviewRow key={i} index={i}>
+                    {fields.map((f) => (
+                      <td
+                        key={f.name}
+                        className={f.extract === "href" || f.name === "url" ? "mono" : ""}
+                        style={{ fontSize: 12.5 }}
+                      >
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            display: "inline-block",
+                            maxWidth: 420
+                          }}
+                        >
+                          {formatValue(row[f.name])}
+                        </span>
+                      </td>
+                    ))}
+                  </AnimatedPreviewRow>
+                ))}
+              </tbody>
+            </table>
+            {hiddenCount > 0 ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 14px",
+                  fontSize: 12.5,
+                  color: "var(--text-muted)",
+                  borderTop: "1px solid var(--divider)"
+                }}
+              >
+                <HarvestArt src={HARVEST_ART.collecting} size={24} />
+                <span>
+                  Showing {populated.length} of {rows.length} matched items in this preview.{" "}
+                  <strong style={{ color: "var(--text-secondary)", fontWeight: 600 }}>
+                    Run the sprout to collect all listings.
+                  </strong>
+                </span>
+              </div>
+            ) : null}
+          </AnimatedPreviewDrawer>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "48px 24px", textAlign: "center" }}>
+            <HarvestArt src={HARVEST_ART.emptyCard} size={104} />
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Your harvest will grow here</h3>
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-muted)", maxWidth: 320, lineHeight: 1.5 }}>
+              Pick an item, choose the values to collect, then click Preview records.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

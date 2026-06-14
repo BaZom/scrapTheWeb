@@ -54,8 +54,10 @@ import {
 } from "./components/product-screens";
 import type { AppView } from "./data/product-ui";
 
-const storageKey = "scraptheweb.auth";
-const appearanceStorageKey = "scraptheweb.appearance.v1";
+const storageKey = "skrowt.auth";
+const legacyStorageKey = "scraptheweb.auth";
+const appearanceStorageKey = "skrowt.appearance.v1";
+const legacyAppearanceStorageKey = "scraptheweb.appearance.v1";
 const lightAccent = "#1A1913";
 const darkAccent = "#F4F1E8";
 const lightSprout = "#4F7A43";
@@ -68,17 +70,32 @@ const defaultAppearance: AppearanceSettings = {
   sproutColor: lightSprout,
   paperColor: lightPaper
 };
-const runTerminalStatuses = new Set(["completed", "failed"]);
+const runTerminalStatuses = new Set(["completed", "failed", "needs_attention"]);
 // Builder drafts are ephemeral page sessions today: a refresh threw away all mapping
 // work. We snapshot the in-progress builder here so a reload resumes exactly where the
 // user left off. Versioned so a shape change can invalidate old drafts instead of
 // crashing on restore.
-const builderDraftKey = "scraptheweb.builder-draft.v1";
+const builderDraftKey = "skrowt.builder-draft.v1";
+const legacyBuilderDraftKey = "scraptheweb.builder-draft.v1";
 
 type StoredSession = Pick<AuthSession, "access_token" | "refresh_token">;
 // BuilderDraft (the persisted snapshot shape) is defined alongside the reducer so the two
 // can't drift; only the canvas + mapping is stored — transient results and the blob
 // screenshot URL are excluded and the screenshot is re-fetched on restore.
+
+function readStoredValue(key: string, legacyKey: string) {
+  const raw = window.localStorage.getItem(key);
+  if (raw !== null) return raw;
+  const legacyRaw = window.localStorage.getItem(legacyKey);
+  if (legacyRaw === null) return null;
+  try {
+    window.localStorage.setItem(key, legacyRaw);
+    window.localStorage.removeItem(legacyKey);
+  } catch {
+    /* keep the legacy value readable if migration storage is unavailable */
+  }
+  return legacyRaw;
+}
 
 function isHexColor(value: string) {
   return /^#[0-9a-f]{6}$/i.test(value);
@@ -175,7 +192,6 @@ export default function Home() {
   // Kept outside the reducer: the screenshot blob URL (side-effect lifecycle) and the
   // canvas view toggle.
   const [screenshotObjectUrl, setScreenshotObjectUrl] = useState<string | null>(null);
-  const [pickerView, setPickerView] = useState<"overlays" | "nodes">("overlays");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [renderBusy, setRenderBusy] = useState(false);
@@ -196,39 +212,42 @@ export default function Home() {
   // before the restore effect has read it.
   const draftPersistReady = useRef(false);
   // Last persisted "structural" snapshot key. Structural changes (pick item, add/remove
-  // field, render) persist immediately; only text edits (recipe/field name) are debounced.
+  // field, render) persist immediately; only text edits (sprout/field name) are debounced.
   const draftStructuralKey = useRef("");
 
   // ----- Load stored session on mount -----
   useEffect(() => {
-    const raw = window.localStorage.getItem(storageKey);
+    const raw = readStoredValue(storageKey, legacyStorageKey);
     if (!raw) return;
     try {
       setSession(JSON.parse(raw) as StoredSession);
     } catch {
       window.localStorage.removeItem(storageKey);
+      window.localStorage.removeItem(legacyStorageKey);
     }
   }, []);
 
   // ----- Load and apply appearance preferences -----
   useEffect(() => {
-    const raw = window.localStorage.getItem(appearanceStorageKey);
+    const raw = readStoredValue(appearanceStorageKey, legacyAppearanceStorageKey);
     if (!raw) return;
     try {
       setAppearance({ ...defaultAppearance, ...(JSON.parse(raw) as Partial<AppearanceSettings>) });
     } catch {
       window.localStorage.removeItem(appearanceStorageKey);
+      window.localStorage.removeItem(legacyAppearanceStorageKey);
     }
   }, []);
 
   useEffect(() => {
     window.localStorage.setItem(appearanceStorageKey, JSON.stringify(appearance));
+    window.localStorage.removeItem(legacyAppearanceStorageKey);
     applyAppearance(appearance);
   }, [appearance]);
 
   // ----- Restore an in-progress builder draft on mount -----
   useEffect(() => {
-    const raw = window.localStorage.getItem(builderDraftKey);
+    const raw = readStoredValue(builderDraftKey, legacyBuilderDraftKey);
     if (!raw) return;
     try {
       const draft = JSON.parse(raw) as BuilderDraft;
@@ -238,6 +257,7 @@ export default function Home() {
       setActiveView("builder");
     } catch {
       window.localStorage.removeItem(builderDraftKey);
+      window.localStorage.removeItem(legacyBuilderDraftKey);
     }
   }, []);
 
@@ -268,6 +288,7 @@ export default function Home() {
           const rotated = await refreshSession(activeSession.refresh_token);
           const next = { access_token: rotated.access_token, refresh_token: rotated.refresh_token };
           window.localStorage.setItem(storageKey, JSON.stringify(next));
+          window.localStorage.removeItem(legacyStorageKey);
           if (!cancelled) {
             setSession(next);
             const data = await Promise.all([
@@ -279,6 +300,7 @@ export default function Home() {
           }
         } catch {
           window.localStorage.removeItem(storageKey);
+          window.localStorage.removeItem(legacyStorageKey);
           if (!cancelled) {
             setSession(null);
             setWorkspaceError(loadError instanceof Error ? loadError.message : "Session expired");
@@ -397,12 +419,13 @@ export default function Home() {
   // clear the draft — this also fires on sign-out/reset, which null the page session.
   // Structural changes (pick item, add/remove field, render, navigate) persist
   // IMMEDIATELY so a reload right after a click can't lose them; pure text edits
-  // (recipe/field name) are debounced to avoid re-serializing the large DOM on every
+  // (sprout/field name) are debounced to avoid re-serializing the large DOM on every
   // keystroke. The first run is skipped so it can't wipe the stored draft before restore.
   useEffect(() => {
     const writeDraft = () => {
       if (!pageSession) {
         window.localStorage.removeItem(builderDraftKey);
+        window.localStorage.removeItem(legacyBuilderDraftKey);
         return;
       }
       const draft: BuilderDraft = {
@@ -418,6 +441,7 @@ export default function Home() {
       };
       try {
         window.localStorage.setItem(builderDraftKey, JSON.stringify(draft));
+        window.localStorage.removeItem(legacyBuilderDraftKey);
       } catch {
         /* quota exceeded (large DOM) — skip persistence rather than break the app */
       }
@@ -473,6 +497,7 @@ export default function Home() {
       const auth = mode === "register" ? await register(email, password) : await login(email, password);
       const next = { access_token: auth.access_token, refresh_token: auth.refresh_token };
       window.localStorage.setItem(storageKey, JSON.stringify(next));
+      window.localStorage.removeItem(legacyStorageKey);
       setSession(next);
       setDashboard({ user: auth.user, organizations: [auth.organization] });
       setRecipes([]);
@@ -494,6 +519,7 @@ export default function Home() {
       }
     }
     window.localStorage.removeItem(storageKey);
+    window.localStorage.removeItem(legacyStorageKey);
     setSession(null);
     resetBuilderState();
   }
@@ -597,7 +623,7 @@ export default function Home() {
     if (!session || !selectorResult || fields.length === 0 || savedRecipe) return;
     const name = recipeName.trim();
     if (!name) {
-      setError("Recipe name is required");
+      setError("Sprout name is required");
       return;
     }
     setRecipeBusy(true);
@@ -616,7 +642,7 @@ export default function Home() {
       setSelectedRunRecipeId(recipe.id);
       setSelectedRunId(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Recipe save failed");
+      setError(e instanceof Error ? e.message : "Sprout save failed");
     } finally {
       setRecipeBusy(false);
     }
@@ -644,7 +670,7 @@ export default function Home() {
       setSelectedRunId(firstRead.id);
       setActiveView("runTest");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Recipe run failed");
+      setError(e instanceof Error ? e.message : "Sprout run failed");
     } finally {
       setRunBusyRecipeId(null);
     }
@@ -659,7 +685,7 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `scraptheweb-run-${runId}.${format}`;
+      link.download = `skrowt-run-${runId}.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -685,17 +711,13 @@ export default function Home() {
       onShapeChange: handleShapeChange,
       pickMode,
       onPickModeChange: (mode: "container" | "field") => dispatch({ type: "pick_mode_changed", mode }),
-      pickerView,
-      onPickerViewChange: setPickerView,
       fields,
       onRemoveField: (name: string) => dispatch({ type: "field_removed", name }),
-      fieldSamples,
       onStepNavigate: handleStepNavigate,
       preview,
       previewBusy,
       onPreviewRecords: handlePreviewRecords,
       recipeName,
-      onRecipeNameChange: (name: string) => dispatch({ type: "recipe_name_changed", name }),
       savedRecipe,
       recipeBusy,
       onSaveRecipe: handleSaveRecipe,
@@ -717,9 +739,7 @@ export default function Home() {
       selectorBusy,
       recipeShape,
       pickMode,
-      pickerView,
       fields,
-      fieldSamples,
       preview,
       previewBusy,
       recipeName,
@@ -869,10 +889,10 @@ export default function Home() {
 }
 
 function suggestedRecipeName(url: string, pageTitle: string | null) {
-  if (pageTitle?.trim()) return `${pageTitle.trim()} Recipe`;
+  if (pageTitle?.trim()) return `${pageTitle.trim()} Sprout`;
   try {
-    return `${new URL(url).hostname.replace(/^www\./, "")} Recipe`;
+    return `${new URL(url).hostname.replace(/^www\./, "")} Sprout`;
   } catch {
-    return "Extraction Recipe";
+    return "Extraction Sprout";
   }
 }
