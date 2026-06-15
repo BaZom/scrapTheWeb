@@ -30,23 +30,24 @@ scheduled crawling, payments, or AI-generated extraction logic.
 
 ## Architecture
 
-```text
-Browser
-  |
-  v
-Next.js frontend
-  |
-  | HTTPS / bearer token / X-API-Key
-  v
-FastAPI API  <---->  Postgres
-  |   |
-  |   +-------> Redis / arq queue
-  |                 |
-  |                 v
-  |              Worker + Playwright
-  |                 |
-  v                 v
-S3-compatible storage for screenshots and rendered HTML
+```mermaid
+flowchart TD
+    browser["Browser"]
+    frontend["Next.js frontend<br/>visual builder, runs, exports"]
+    api["FastAPI API<br/>auth, sprouts, runs, previews"]
+    postgres[("Postgres<br/>users, sprouts, versions, runs, diffs")]
+    redis[("Redis<br/>arq queue, rate limits, render cache")]
+    worker["arq worker + Playwright<br/>render pages, extract rows"]
+    storage[("S3-compatible storage<br/>screenshots, rendered HTML")]
+
+    browser --> frontend
+    frontend -->|"HTTPS<br/>bearer token or X-API-Key"| api
+    api <--> postgres
+    api <--> redis
+    api --> storage
+    redis -->|"render / run jobs"| worker
+    worker -->|"job status + extracted rows"| api
+    worker --> storage
 ```
 
 See:
